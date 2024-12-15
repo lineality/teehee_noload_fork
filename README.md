@@ -1,30 +1,18 @@
-# Teehee - a modal terminal hex editor
+### Teehee No-Load - a memory efficient modal terminal hex editor
 
-![AUR version](https://img.shields.io/aur/version/teehee)
 
-Inspired by Vim, Kakoune and Hiew.
+# Original Teehee here:
+https://github.com/Gskartwii/teehee/releases
+#### For more information see the real Teehee (it's awsome)
 
-## Installation
-Arch Linux users: The package for Arch Linux is available on [AUR](https://aur.archlinux.org/packages/teehee/).
+## Fork: This is an experimental fork of the original Gskartwii project.
+Any horribleness is totally on me. 
 
-Others: Just run `cargo install teehee`! If you don't have rust, you can get it from [rustup.rs](https://rustup.rs).
-The application will be available as the executable `teehee`. More installation options may be coming in the future.
 
-## Motivation
 
-Reverse engineers, software engineers and other IT people often need to work with binary files. Hex editors are usually the go-to tool for dealing with binary file formats when a more specialized tool isn't available. Many of the existing hex editors lack support for modal editing, which Vim/Kakoune/Emacs users will miss. Hiew supports it to an extent, but it's non-free software, and its keybinds are unintuitive. Teehee is designed to offer a native-feeling experience to Kakoune and Vim users, while also providing additional hex editing capabilities like coloured marks for regions of data and encryption/compression scripts.
 
-## Demo
 
-[![asciicast](https://asciinema.org/a/349728.svg)](https://asciinema.org/a/349728)
-
-Teehee supports multiple selections, efficient selection modifying commands and various data editing operations.
-
-## Design
-
-![image](https://user-images.githubusercontent.com/6651822/87162730-010efe00-c2cf-11ea-8a0e-f90fbd209cec.png)
-
-## Implemented keybinds
+## Implemented keybinds (from original version Readme)
 * `hjkl` for movement (press shift to extend selection instead)
 ```
     ^
@@ -101,9 +89,3 @@ Counts:
 * Example: `50l`: Move 50 bytes to the right.
 * Example: `x500g`: Jump to offset 0x500
 * Example: `<a-s>x12xb`: Split selection into parts of 0x12 bytes.
-
-# Releases
-Releases are signed with the following PGP key:
-`9330E5D6861507BEFBF1893347E208E66179DC94`. The source code can be found on
-the [GitHub releases page](https://github.com/Gskartwii/teehee/releases), along
-with the signature of the source code tgz.

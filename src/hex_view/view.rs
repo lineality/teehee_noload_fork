@@ -78,38 +78,6 @@ fn debug_log(message: &str) {
     }
 }
 
-// fn debug_log(message: &str) {
-//     // Get the current working directory
-//     let cwd = env::current_dir().expect("Failed to get current directory");
-//     let log_path = cwd.join("teehee_debug.log");
-
-//     // Testprint
-//     // println!("Attempting to log to: {}", log_path.display());
-
-//     // Check if path exists and is writable
-//     // println!("Path exists: {}", log_path.exists());
-
-//     match OpenOptions::new()
-//         .create(true)
-//         .write(true)
-//         .append(true)
-//         .open(&log_path)
-//     {
-//         Ok(mut file) => {
-//             let timestamp = SystemTime::now()
-//                 .duration_since(UNIX_EPOCH)
-//                 .expect("Time went backwards")
-//                 .as_secs();
-
-//             match writeln!(file, "[{}] {}", timestamp, message) {
-//                 Ok(_) => println!("Log written successfully to {}", log_path.display()),
-//                 Err(e) => println!("Failed to write to log: {}", e),
-//             }
-//         }
-//         Err(e) => println!("Failed to open log file: {}", e),
-//     }
-// }
-
 struct MixedRepr(u8);
 
 impl fmt::Display for MixedRepr {
@@ -1262,119 +1230,6 @@ impl HexView {
             _ => Ok(()),
         }
     }
-
-    // // fn scroll_down(&mut self, stdout: &mut impl Write, line_count: usize) -> Result<()> {
-    // fn scroll_down(&mut self, stdout: &mut impl Write, line_count: usize) -> Result<()> {
-        
-        
-    //     let (_, height) = terminal::size().unwrap_or((80, 23));
-    //     let chunk_size = (height as usize - 1) * 16;  // Subtract status line
-        
-    //     // let chunk_size = 368;  // Your current settings
-        
-    //     // // Try to load next chunk if near end of current current_buffer
-    //     // if self.start_offset + (line_count * 16) >= self.buffr_collection.current().data.len() {
-    //     //     self.buffr_collection.load_next_chunk(self.buffr_collection.current(), chunk_size)?;
-    //     // }
-    //     // Check if we're near the end and can load more
-    //     if self.start_offset + (line_count * 16) >= self.buffr_collection.current().data.len() {
-    //         let _ = self.buffr_collection.load_next_chunk(chunk_size)?;
-    //     }
-
-        
-        
-    //     if self.visible_bytes().end >= self.buffr_collection.current().data.len() {
-    //         // we already reach the bottom of the file
-    //         return Ok(());
-    //     }
-
-    //     self.start_offset += 0x10 * line_count;
-
-    //     if line_count > (self.size.1 - 1) as usize {
-    //         self.draw(stdout)?;
-    //         return Ok(());
-    //     } else {
-    //         queue!(
-    //             stdout,
-    //             terminal::ScrollUp(line_count as u16),
-    //             // important: first scroll, then clear the line
-    //             // I don't know why, but this prevents flashing on the statusline
-    //             cursor::MoveTo(0, self.size.1 - 2),
-    //             terminal::Clear(terminal::ClearType::CurrentLine),
-    //         )?;
-
-    //         let mut invalidated_rows: BTreeSet<u16> =
-    //             (self.size.1 - 1 - line_count as u16..=self.size.1 - 2).collect();
-    //         invalidated_rows.extend(0..BytePropertiesFormatter::height() as u16);
-    //         self.draw_rows(stdout, &invalidated_rows); // -1 is statusline
-    //     }
-
-    //     // cargo is not happy with these new lines:        
-    //     self.start_offset += 0x10 * line_count;
-        
-    //     // New buffer management
-    //     self.manage_buffer()?;
-        
-    //     self.draw(stdout)?;
-    //     Ok(())
-    // }
-
-    // fn scroll_down(&mut self, stdout: &mut impl Write, line_count: usize) -> Result<()> {
-    //     debug_log("Entering scroll_down");
-    //     let (_, height) = terminal::size().unwrap_or((80, 23));
-    //     let chunk_size = (height as usize - 1) * 16;  // Subtract status line
-        
-    //     debug_log(&format!("Chunk size: {}", chunk_size));
-        
-
-    //     // Check if we're near the end and can load more
-    //     if self.start_offset + (line_count * 16) >= self.buffr_collection.current().data.len() {
-    //         debug_log("Attempting to load next chunk");
-    //         if let Err(e) = self.add_chunk_to_bottom(chunk_size) {
-    //             debug_log(&format!("Error loading chunk: {}", e))
-                
-    //         }
-    //     }
-
-    //     if self.visible_bytes().end >= self.buffr_collection.current().data.len() {
-    //         debug_log("Reached bottom of file");
-    //         return Ok(());
-    //     }
-
-    //     self.start_offset += 0x10 * line_count;
-
-    //     if line_count > (self.size.1 - 1) as usize {
-    //         let _ = self.draw(stdout)?;  // Handle the Result
-    //         return Ok(());
-    //     } else {
-    //         queue!(
-    //             stdout,
-    //             terminal::ScrollUp(line_count as u16),
-    //             cursor::MoveTo(0, self.size.1 - 2),
-    //             terminal::Clear(terminal::ClearType::CurrentLine),
-    //         )?;
-
-    //         let mut invalidated_rows: BTreeSet<u16> =
-    //             (self.size.1 - 1 - line_count as u16..=self.size.1 - 2).collect();
-    //         invalidated_rows.extend(0..BytePropertiesFormatter::height() as u16);
-    //         let _ = self.draw_rows(stdout, &invalidated_rows)?;  // Handle the Result
-    //     }
-
-    //     // Buffer management
-    //     if let Err(e) = self.manage_buffer() {
-    //         debug_log(&format!("Error managing buffer: {}", e))
-    //     }
-
-    //     let _ = self.draw(stdout)?;  // Handle the Result
-        
-    //     debug_log("Exiting scroll_down");
-
-        
-    //     Ok(())
-    // }
-                
-
-                    
     fn scroll_down(&mut self, stdout: &mut impl Write, line_count: usize) -> Result<()> {
         // Configurable chunk size (e.g., 368 bytes)
         // default 23 rows x 16 bytes is 368)
@@ -1398,7 +1253,7 @@ impl HexView {
         let needed_bytes = next_position + (visible_rows * 16);
         debug_log(&format!("Need bytes up to: {}", needed_bytes));
         
-        // // If we need more data for full display
+        // // If need more data for full display
         // if needed_bytes > current_size {
         //     debug_log("Loading more data for display");
         //     let current_buffer = self.buffr_collection.current_mut();
@@ -1416,7 +1271,6 @@ impl HexView {
         let current_size = self.buffr_collection.current().data.len();
         debug_log(&format!("Need bytes up to: {}, have: {}", next_visible_end, current_size));
 
-        
         // Try to load more data if needed
         if next_visible_end > current_size {
             let current_buffer = self.buffr_collection.current_mut();
@@ -1446,10 +1300,6 @@ impl HexView {
         // If we get here, we can safely scroll
         self.start_offset = next_position;
         debug_log(&format!("Scrolled to new start_offset: {}", self.start_offset));
-            
-        // // If we get here, we can scroll
-        // self.start_offset += 0x10 * line_count;
-        // debug_log(&format!("New start_offset: {}", self.start_offset));
 
         if line_count > (self.size.1 - 1) as usize {
             self.draw(stdout)?;
@@ -1469,66 +1319,7 @@ impl HexView {
             Ok(())
         }
     }
-          
-                
-    // fn scroll_down(&mut self, stdout: &mut impl Write, line_count: usize) -> Result<()> {
-    
-    //     // Configurable chunk size (e.g., 368 bytes)
-    //     // default 23 rows x 16 bytes is 368)
-    //     let (_, height) = terminal::size().unwrap_or((80, 23));
-    //     let chunk_size = (height as usize - 1) * 16;  // Subtract status line
-    //     debug_log(&format!("scroll_down chunk_size: {}", chunk_size));
-        
-    //     debug_log(&format!("\n=== Scroll Down Event ==="));
-    //     debug_log(&format!("Line count: {}", line_count));
-    //     debug_log(&format!("Current start_offset: {}", self.start_offset));
-    //     debug_log(&format!("Current buffer size: {}", self.buffr_collection.current().data.len()));
-    //     debug_log(&format!("Visible bytes end: {}", self.visible_bytes().end));
-        
-    //     // Check if we need to load more data
-    //     let next_position = self.start_offset + (line_count * 16);
-    //     debug_log(&format!("Next position would be: {}", next_position));
-        
-    //     if next_position >= self.buffr_collection.current().data.len() {
-    //         debug_log("Attempting to load next chunk");
-    //         let current_buffer = self.buffr_collection.current_mut();
-    //         match current_buffer.load_next_chunk(chunk_size) {
-    //             Ok(true) => debug_log("Successfully loaded next chunk"),
-    //             Ok(false) => debug_log("No more data to load"),
-    //             Err(e) => debug_log(&format!("Error loading chunk: {}", e)),
-    //         }
-    //         debug_log(&format!("Buffer size after load attempt: {}", 
-    //             self.buffr_collection.current().data.len()));
-    //     }
 
-    //     if self.visible_bytes().end >= self.buffr_collection.current().data.len() {
-    //         debug_log("Reached bottom of file - stopping scroll");
-    //         return Ok(());
-    //     }
-
-    //     // If we get here, we can scroll
-    //     self.start_offset += 0x10 * line_count;
-    //     debug_log(&format!("New start_offset: {}", self.start_offset));
-
-    //     if line_count > (self.size.1 - 1) as usize {
-    //         self.draw(stdout)?;
-    //         Ok(())
-    //     } else {
-    //         queue!(
-    //             stdout,
-    //             terminal::ScrollUp(line_count as u16),
-    //             cursor::MoveTo(0, self.size.1 - 2),
-    //             terminal::Clear(terminal::ClearType::CurrentLine),
-    //         )?;
-
-    //         let mut invalidated_rows: BTreeSet<u16> =
-    //             (self.size.1 - 1 - line_count as u16..=self.size.1 - 2).collect();
-    //         invalidated_rows.extend(0..BytePropertiesFormatter::height() as u16);
-    //         let _ = self.draw_rows(stdout, &invalidated_rows)?;
-    //         Ok(())
-    //     }
-    // }
-                
     fn scroll_up(&mut self, stdout: &mut impl Write, line_count: usize) -> Result<()> {
         if self.start_offset < 0x10 * line_count {
             // we already at the top the file
