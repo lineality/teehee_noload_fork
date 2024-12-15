@@ -44,6 +44,9 @@ use crate::modes::mode::{DirtyBytes, Mode, ModeTransition};
 use crate::selection::Direction;
 // use std::path::Path;
 use std::env;
+
+use crate::byte_rope::Rope as CustomByteRope;
+
 const VERTICAL: &str = "│";
 const LEFTARROW: &str = "";
 
@@ -497,28 +500,42 @@ impl HexView {
         debug_log(&format!("trim_buffer_bottom, size={:?}", chunk_size));
         
         let current_buffer = self.buffr_collection.current_mut();
-        debug_log(&format!("Attempting trim_buffer_bottom: current size={}, chunk_size={}", 
-            current_buffer.data.len(), chunk_size));
+        let total_len = current_buffer.data.len();
+        
+        // Safety checks
+        if chunk_size == 0 || total_len <= chunk_size * 2 {
+            debug_log("Buffer too small for trimming");
+            return;
+        }
 
-        if current_buffer.data.len() > chunk_size * 2 {
-            let mut builder = SubsetBuilder::new();
-            builder.push_segment(chunk_size, 1);
-            let subset = builder.build();
+        let keep_len = total_len - chunk_size;
+        if keep_len > 0 {
+            debug_log(&format!(
+                "Trimming bottom: start_offset={}, total_len={}, keeping {} bytes", 
+                self.start_offset, total_len, keep_len
+            ));
             
-            debug_log(&format!("Trimming bottom: start_offset={}, removing {} bytes", 
-                self.start_offset, chunk_size));
+            // Create new rope using your custom implementation
+            let mut builder = TreeBuilder::new();
+            let chunks: Vec<u8> = current_buffer.data
+                .iter_chunks(0..keep_len)
+                .flat_map(|chunk| chunk.to_vec())
+                .collect();
+                
+            if !chunks.is_empty() {
+                builder.push_leaf(Bytes(chunks));
+            }
             
             let old_len = current_buffer.data.len();
-            current_buffer.data = current_buffer.data.without_subset(subset);
+            current_buffer.data = CustomByteRope(builder.build());
             let new_len = current_buffer.data.len();
             
             debug_log(&format!("Buffer size changed: {} -> {}", old_len, new_len));
             
             self.start_offset += chunk_size;
-        } else {
-            debug_log("Buffer too small for trimming");
         }
     }
+
     fn trim_buffer_top(&mut self, chunk_size: usize) {
         debug_log("\n=== Trim Buffer Top ===");
         debug_log(&format!("trim_buffer_top, size={:?}", chunk_size));
@@ -532,22 +549,86 @@ impl HexView {
             return;
         }
 
-        // Create a subset marking the first chunk_size bytes for removal
-        let mut builder = SubsetBuilder::new();
-        builder.push_segment(0, chunk_size);  // Mark first chunk_size bytes
-        let subset = builder.build();
-        
-        debug_log(&format!("Trimming first {} bytes from buffer of size {}", chunk_size, total_len));
-        
-        let old_len = current_buffer.data.len();
-        current_buffer.data = current_buffer.data.without_subset(subset);
-        let new_len = current_buffer.data.len();
-        
-        debug_log(&format!("Buffer trimmed: {} -> {}", old_len, new_len));
-        
-        // Update start_offset to account for removed bytes
-        self.start_offset = self.start_offset.saturating_sub(chunk_size);
+        if chunk_size < total_len {
+            debug_log(&format!("Trimming first {} bytes from buffer of size {}", chunk_size, total_len));
+            
+            // Create new rope using your custom implementation
+            let mut builder = TreeBuilder::new();
+            let chunks: Vec<u8> = current_buffer.data
+                .iter_chunks(chunk_size..total_len)
+                .flat_map(|chunk| chunk.to_vec())
+                .collect();
+                
+            if !chunks.is_empty() {
+                builder.push_leaf(Bytes(chunks));
+            }
+            
+            let old_len = current_buffer.data.len();
+            current_buffer.data = CustomByteRope(builder.build());
+            let new_len = current_buffer.data.len();
+            
+            debug_log(&format!("Buffer trimmed: {} -> {}", old_len, new_len));
+            
+            self.start_offset = self.start_offset.saturating_sub(chunk_size);
+        }
     }
+        
+    // fn trim_buffer_bottom(&mut self, chunk_size: usize) {
+    //     debug_log(&format!("trim_buffer_bottom, size={:?}", chunk_size));
+        
+    //     let current_buffer = self.buffr_collection.current_mut();
+    //     debug_log(&format!("Attempting trim_buffer_bottom: current size={}, chunk_size={}", 
+    //         current_buffer.data.len(), chunk_size));
+
+    //     if current_buffer.data.len() > chunk_size * 2 {
+    //         let mut builder = SubsetBuilder::new();
+    //         builder.push_segment(chunk_size, 1);
+    //         let subset = builder.build();
+            
+    //         debug_log(&format!("Trimming bottom: start_offset={}, removing {} bytes", 
+    //             self.start_offset, chunk_size));
+            
+    //         let old_len = current_buffer.data.len();
+    //         current_buffer.data = current_buffer.data.without_subset(subset);
+    //         let new_len = current_buffer.data.len();
+            
+    //         debug_log(&format!("Buffer size changed: {} -> {}", old_len, new_len));
+            
+    //         self.start_offset += chunk_size;
+    //     } else {
+    //         debug_log("Buffer too small for trimming");
+    //     }
+    // }
+    
+    // // fn trim_buffer_top(&mut self, chunk_size: usize) {
+    // //     debug_log("\n=== Trim Buffer Top ===");
+    // //     debug_log(&format!("trim_buffer_top, size={:?}", chunk_size));
+        
+    // //     let current_buffer = self.buffr_collection.current_mut();
+    // //     let total_len = current_buffer.data.len();
+        
+    // //     // Safety checks
+    // //     if chunk_size == 0 || total_len <= chunk_size * 2 {
+    // //         debug_log(&format!("Cannot trim: chunk_size={}, total_len={}", chunk_size, total_len));
+    // //         return;
+    // //     }
+
+    // //     // Create a subset marking the first chunk_size bytes for removal
+    // //     let mut builder = SubsetBuilder::new();
+    // //     builder.push_segment(0, chunk_size);  // Mark first chunk_size bytes
+    // //     let subset = builder.build();
+        
+    // //     debug_log(&format!("Trimming first {} bytes from buffer of size {}", chunk_size, total_len));
+        
+    // //     let old_len = current_buffer.data.len();
+    // //     current_buffer.data = current_buffer.data.without_subset(subset);
+    // //     let new_len = current_buffer.data.len();
+        
+    // //     debug_log(&format!("Buffer trimmed: {} -> {}", old_len, new_len));
+        
+    // //     // Update start_offset to account for removed bytes
+    // //     self.start_offset = self.start_offset.saturating_sub(chunk_size);
+    // // }
     // fn trim_buffer_top(&mut self, chunk_size: usize) {
     //     debug_log("\n=== Trim Buffer Top ===");
     //     debug_log(&format!("trim_buffer_top, size={:?}", chunk_size));
