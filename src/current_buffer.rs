@@ -47,7 +47,6 @@ impl CurrentBuffer {
         }
     }
 
-    
     pub fn load_next_chunk(&mut self, chunk_size: usize) -> Result<bool, std::io::Error> {
         if let Some(path) = &self.path {
             let mut file = File::open(path)?;
@@ -86,8 +85,6 @@ impl CurrentBuffer {
         }
     }
 
-    
-    
     pub fn name(&self) -> String {
         if let Some(path) = &self.path {
             format!("{}", path.display())

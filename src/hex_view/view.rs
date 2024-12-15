@@ -2,10 +2,15 @@ use std::cell::Cell;
 use std::cmp;
 use std::collections::BTreeSet;
 use std::fmt;
-use std::io::Write;
+use std::io::{
+    SeekFrom,
+    Seek,
+    Write,
+    Read,
+};
 use std::ops::Range;
 use std::time;
-
+use std::fs::File;
 use crossterm::{
     cursor,
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
@@ -13,7 +18,15 @@ use crossterm::{
     style::{Color, Stylize},
     terminal, QueueableCommand, Result,
 };
-use xi_rope::Interval;
+use xi_rope::{
+    Interval,
+    Rope,
+    Delta,
+};
+use xi_rope::multiset::Subset;
+
+
+
 
 use super::byte_properties::BytePropertiesFormatter;
 use super::{make_padding, PrioritizedStyle, Priority, StylingCommand};
@@ -322,6 +335,107 @@ pub struct HexView {
 }
 
 impl HexView {
+    fn is_near_bottom(&self) -> bool {
+        let current_buffer = self.buffr_collection.current();
+        let visible_rows = self.size.1 as usize - 2;  // Subtract status bar
+        let bytes_per_line = self.bytes_per_line;
+        
+        let total_buffer_bytes = current_buffer.data.len();
+        let current_view_end = self.start_offset + (visible_rows * bytes_per_line);
+        
+        // Within last 10% of buffer
+        total_buffer_bytes - current_view_end < (total_buffer_bytes / 10)
+    }
+    
+    fn is_near_top(&self) -> bool {
+        // Within first 10% of buffer
+        self.start_offset < (self.buffr_collection.current().data.len() / 10)
+    }
+
+    fn add_chunk_to_bottom(&mut self, chunk_size: usize) -> std::result::Result<(), std::io::Error> {
+        let current_buffer = self.buffr_collection.current();
+        if let Some(path) = &current_buffer.path {
+            let mut file = File::open(path)?;
+            let current_data_len = current_buffer.data.len();
+            
+            file.seek(SeekFrom::Start(current_data_len as u64))?;
+            
+            let mut next_chunk = vec![0; chunk_size];
+            let bytes_read = file.read(&mut next_chunk)?;
+            
+            if bytes_read > 0 {
+                // Convert to Rope and append
+                let chunk_rope: Rope = next_chunk[..bytes_read].to_vec().into();
+                let mut current_data = current_buffer.data.clone();
+                current_data = current_data.apply_delta(&Delta::insert(current_data.len(), chunk_rope));
+                self.buffr_collection.current_mut().data = current_data;
+            }
+        }
+        Ok(())
+    }
+
+    fn add_chunk_to_top(&mut self, chunk_size: usize) -> std::result::Result<(), std::io::Error> {
+        let current_buffer = self.buffr_collection.current();
+        if let Some(path) = &current_buffer.path {
+            let mut file = File::open(path)?;
+            
+            // Calculate how much to go back
+            let start_pos = self.start_offset.saturating_sub(chunk_size);
+            file.seek(SeekFrom::Start(start_pos as u64))?;
+            
+            let mut prev_chunk = vec![0; chunk_size];
+            let bytes_read = file.read(&mut prev_chunk)?;
+            
+            if bytes_read > 0 {
+                // Convert to Rope and prepend
+                let chunk_rope: Rope = prev_chunk[..bytes_read].to_vec().into();
+                let mut current_data = current_buffer.data.clone();
+                current_data = current_data.apply_delta(&Delta::insert(0, chunk_rope));
+                self.buffr_collection.current_mut().data = current_data;
+                
+                // Adjust start_offset
+                self.start_offset = start_pos;
+            }
+        }
+        Ok(())
+    }
+
+    fn trim_buffer_bottom(&mut self, chunk_size: usize) {
+        let current_buffer = self.buffr_collection.current_mut();
+        if current_buffer.data.len() > chunk_size * 2 {
+            // Remove first chunk_size bytes
+            let subset = Subset::new(vec![(0, chunk_size)]);
+            current_buffer.data = current_buffer.data.without_subset(subset);
+            self.start_offset += chunk_size;
+        }
+    }
+
+    fn trim_buffer_top(&mut self, chunk_size: usize) {
+        let current_buffer = self.buffr_collection.current_mut();
+        if current_buffer.data.len() > chunk_size * 2 {
+            // Remove last chunk_size bytes
+            let total_len = current_buffer.data.len();
+            let subset = Subset::new(vec![(total_len - chunk_size, total_len)]);
+            current_buffer.data = current_buffer.data.without_subset(subset);
+        }
+    }
+
+    fn manage_buffer(&mut self) -> std::result::Result<(), std::io::Error> {
+        let chunk_size = 368;  // Your previous chunk size
+        
+        if self.is_near_bottom() {
+            self.add_chunk_to_bottom(chunk_size)?;
+            self.trim_buffer_top(chunk_size);
+        }
+        
+        if self.is_near_top() {
+            self.add_chunk_to_top(chunk_size)?;
+            self.trim_buffer_bottom(chunk_size);
+        }
+        
+        Ok(())
+    }
+        
     pub fn with_buffr_collection(buffr_collection: BuffrCollection) -> HexView {
         HexView {
             buffr_collection,
@@ -338,6 +452,17 @@ impl HexView {
         }
     }
 
+    // fn is_near_bottom(&self) -> bool {
+    //     let total_buffer_size = self.buffr_collection.current().data.len();
+    //     let cursor_percentage = (self.cursor_position as f32 / total_buffer_size as f32) * 100.0;
+    //     cursor_percentage >= 95.0
+    // }
+
+    // fn is_near_top(&self) -> bool {
+    //     let cursor_percentage = (self.cursor_position as f32 / self.buffr_collection.current().data.len() as f32) * 100.0;
+    //     cursor_percentage <= 5.0
+    // }
+    
     pub fn set_bytes_per_line(&mut self, bpl: usize) {
         self.bytes_per_line = bpl;
     }
@@ -994,7 +1119,7 @@ impl HexView {
 
         if line_count > (self.size.1 - 1) as usize {
             self.draw(stdout)?;
-            Ok(())
+            return Ok(());
         } else {
             queue!(
                 stdout,
@@ -1008,8 +1133,17 @@ impl HexView {
             let mut invalidated_rows: BTreeSet<u16> =
                 (self.size.1 - 1 - line_count as u16..=self.size.1 - 2).collect();
             invalidated_rows.extend(0..BytePropertiesFormatter::height() as u16);
-            self.draw_rows(stdout, &invalidated_rows) // -1 is statusline
+            self.draw_rows(stdout, &invalidated_rows); // -1 is statusline
         }
+
+        // cargo is not happy with these new lines:        
+        self.start_offset += 0x10 * line_count;
+        
+        // New buffer management
+        self.manage_buffer()?;
+        
+        self.draw(stdout)?;
+        Ok(())
     }
 
     fn scroll_up(&mut self, stdout: &mut impl Write, line_count: usize) -> Result<()> {
