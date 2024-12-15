@@ -23,6 +23,31 @@ pub enum OverflowSelectionStyle {
     CursorTail,
 }
 
+
+#[derive(Default)]
+pub struct CurrentBuffer {
+    pub path: Option<PathBuf>,
+    pub data: Rope,
+    pub selection: Selection,
+    pub registers: HashMap<char, Vec<Vec<u8>>>,
+    pub dirty: bool,
+
+    history: History,
+}
+
+impl CurrentBuffer {
+    pub fn from_data_and_path(data: Vec<u8>, path: Option<impl Into<PathBuf>>) -> CurrentBuffer {
+        CurrentBuffer {
+            data: data.into(),
+            selection: Selection::new(),
+            registers: HashMap::new(),
+            dirty: false,
+            path: path.map(Into::into),
+            history: History::new(),
+        }
+    }
+
+    
     pub fn load_next_chunk(&mut self, chunk_size: usize) -> Result<bool, std::io::Error> {
         if let Some(path) = &self.path {
             let mut file = File::open(path)?;
@@ -61,29 +86,7 @@ pub enum OverflowSelectionStyle {
         }
     }
 
-#[derive(Default)]
-pub struct CurrentBuffer {
-    pub path: Option<PathBuf>,
-    pub data: Rope,
-    pub selection: Selection,
-    pub registers: HashMap<char, Vec<Vec<u8>>>,
-    pub dirty: bool,
-
-    history: History,
-}
-
-impl CurrentBuffer {
-    pub fn from_data_and_path(data: Vec<u8>, path: Option<impl Into<PathBuf>>) -> CurrentBuffer {
-        CurrentBuffer {
-            data: data.into(),
-            selection: Selection::new(),
-            registers: HashMap::new(),
-            dirty: false,
-            path: path.map(Into::into),
-            history: History::new(),
-        }
-    }
-
+    
     
     pub fn name(&self) -> String {
         if let Some(path) = &self.path {
