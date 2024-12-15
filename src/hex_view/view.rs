@@ -26,6 +26,7 @@ use crossterm::{
 use xi_rope::{
     Interval,
     Delta,
+    Rope
 };
 use xi_rope::tree::TreeBuilder;
 use xi_rope::multiset::SubsetBuilder;
@@ -523,18 +524,108 @@ impl HexView {
         debug_log(&format!("trim_buffer_top, size={:?}", chunk_size));
         
         let current_buffer = self.buffr_collection.current_mut();
-        if current_buffer.data.len() > chunk_size * 2 {
-            let total_len = current_buffer.data.len();
-            
-            // Create a subset marking the last chunk_size bytes for deletion
-            let mut builder = SubsetBuilder::new();
-            builder.push_segment(total_len - chunk_size, 1);  // Mark last chunk_size bytes with count 1
-            let subset = builder.build();
-            
-            // Remove the marked bytes
-            current_buffer.data = current_buffer.data.without_subset(subset);
+        let total_len = current_buffer.data.len();
+        
+        // Safety checks
+        if chunk_size == 0 || total_len <= chunk_size * 2 {
+            debug_log(&format!("Cannot trim: chunk_size={}, total_len={}", chunk_size, total_len));
+            return;
         }
+
+        // Create a subset marking the first chunk_size bytes for removal
+        let mut builder = SubsetBuilder::new();
+        builder.push_segment(0, chunk_size);  // Mark first chunk_size bytes
+        let subset = builder.build();
+        
+        debug_log(&format!("Trimming first {} bytes from buffer of size {}", chunk_size, total_len));
+        
+        let old_len = current_buffer.data.len();
+        current_buffer.data = current_buffer.data.without_subset(subset);
+        let new_len = current_buffer.data.len();
+        
+        debug_log(&format!("Buffer trimmed: {} -> {}", old_len, new_len));
+        
+        // Update start_offset to account for removed bytes
+        self.start_offset = self.start_offset.saturating_sub(chunk_size);
     }
+    // fn trim_buffer_top(&mut self, chunk_size: usize) {
+    //     debug_log("\n=== Trim Buffer Top ===");
+    //     debug_log(&format!("trim_buffer_top, size={:?}", chunk_size));
+        
+    //     // Safety checks
+    //     if chunk_size == 0 {
+    //         debug_log("Cannot trim zero bytes");
+    //         return;
+    //     }
+        
+    //     let current_buffer = self.buffr_collection.current_mut();
+    //     let total_len = current_buffer.data.len();
+        
+    //     // Ensure we have enough data to trim
+    //     if total_len <= chunk_size * 2 {
+    //         debug_log(&format!("Buffer too small to trim: {} <= {}", total_len, chunk_size * 2));
+    //         return;
+    //     }
+
+    //     // Ensure we're not trimming the entire buffer
+    //     let trim_size = std::cmp::min(chunk_size, total_len - chunk_size);
+    //     if trim_size == 0 {
+    //         debug_log("No data to trim");
+    //         return;
+    //     }
+        
+    //     let mut builder = SubsetBuilder::new();
+    //     builder.push_segment(0, trim_size);
+    //     let subset = builder.build();
+        
+    //     let old_len = current_buffer.data.len();
+    //     current_buffer.data = current_buffer.data.without_subset(subset);
+    //     let new_len = current_buffer.data.len();
+        
+    //     debug_log(&format!("Buffer trimmed: {} -> {}", old_len, new_len));
+    // }
+        
+    
+    // fn trim_buffer_top(&mut self, chunk_size: usize) {
+    //     debug_log("\n=== Trim Buffer Top ===");
+    //     debug_log(&format!("trim_buffer_top, size={:?}", chunk_size));
+        
+    //     let current_buffer = self.buffr_collection.current_mut();
+    //     if current_buffer.data.len() > chunk_size * 2 {
+    //         let total_len = current_buffer.data.len();
+            
+    //         // Only trim the first chunk_size bytes
+    //         let mut builder = SubsetBuilder::new();
+    //         builder.push_segment(0, chunk_size);  // Mark first chunk_size bytes
+    //         let subset = builder.build();
+            
+    //         let old_len = current_buffer.data.len();
+    //         current_buffer.data = current_buffer.data.without_subset(subset);
+    //         let new_len = current_buffer.data.len();
+            
+    //         debug_log(&format!("Buffer trimmed: {} -> {}", old_len, new_len));
+    //     }
+    // }
+    
+    
+    //
+    // fn trim_buffer_top(&mut self, chunk_size: usize) {
+    //     debug_log("\n=== Trim Buffer Top ===");
+    //     debug_log(&format!("trim_buffer_top, size={:?}", chunk_size));
+        
+    //     let current_buffer = self.buffr_collection.current_mut();
+    //     if current_buffer.data.len() > chunk_size * 2 {
+    //         let total_len = current_buffer.data.len();
+            
+    //         // Create a subset marking the last chunk_size bytes for deletion
+    //         let mut builder = SubsetBuilder::new();
+    //         builder.push_segment(total_len - chunk_size, 1);  // Mark last chunk_size bytes with count 1
+    //         let subset = builder.build();
+            
+    //         // Remove the marked bytes
+    //         current_buffer.data = current_buffer.data.without_subset(subset);
+    //     }
+    // }
     fn manage_buffer(&mut self) -> std::result::Result<(), std::io::Error> {
 
         let chunk_size = 368;  // Your previous chunk size
@@ -611,6 +702,14 @@ impl HexView {
         queue!(stdout, style::SetForegroundColor(Color::White))?;
         queue!(stdout, style::Print(format!("{} ", VERTICAL)))
     }
+    
+    
+    /// Safely calculates if an offset is within valid bounds
+    fn is_valid_offset(&self, offset: usize) -> bool {
+        let buffer_size = self.buffr_collection.current().data.len();
+        offset < buffer_size
+    }
+    
 
     /// Converts a byte offset in the file to a screen row number (0-based).
     /// 
@@ -649,6 +748,16 @@ impl HexView {
     /// - Can handle offsets smaller than start_offset (negative rows filtered)
     /// 
     fn offset_to_row(&self, offset: usize) -> Result<u16> {
+        debug_log(&format!("offset_to_row: offset={}, start_offset={}", 
+            offset, self.start_offset));
+    
+        // Check for underflow condition
+        if offset < self.start_offset {
+            debug_log(&format!("offset_to_row: offset {} is before start_offset {}", 
+                offset, self.start_offset));
+            return Err(Error::new(ErrorKind::Other, "Offset before visible area"));
+        }
+    
         let row = (offset - self.start_offset) / self.bytes_per_line;
         if row >= self.size.1 as usize {
             debug_log(&format!("offset_to_row: row {} exceeds screen height {}", 
@@ -1303,6 +1412,8 @@ impl HexView {
             _ => Ok(()),
         }
     }
+    
+
     fn scroll_down(&mut self, stdout: &mut impl Write, line_count: usize) -> Result<()> {
         // Configurable chunk size (e.g., 368 bytes)
         // default 23 rows x 16 bytes is 368)
@@ -1314,8 +1425,15 @@ impl HexView {
         debug_log(&format!("Line count: {}", line_count));
         debug_log(&format!("Current start_offset: {}", self.start_offset));
         
-        let current_buffer = self.buffr_collection.current();
-        let current_size = current_buffer.data.len();
+        // let current_buffer = self.buffr_collection.current();
+        // let current_size = current_buffer.data.len();
+        // debug_log(&format!("Current buffer size: {}", current_size));
+        
+        // Get current size before modifications
+        let current_size = {
+            let current_buffer = self.buffr_collection.current();
+            current_buffer.data.len()
+        };
         debug_log(&format!("Current buffer size: {}", current_size));
         
         let next_position = self.start_offset + (line_count * 16);
@@ -1349,16 +1467,47 @@ impl HexView {
             let current_buffer = self.buffr_collection.current_mut();
             match current_buffer.load_next_chunk(64) {
                 Ok(true) => {
-                    debug_log(&format!("Loaded chunk. New size: {}", current_buffer.data.len()));
-                    debug_log(&format!("Should trim? {}", self.should_trim_buffer()));
+                    debug_log(&format!("Loaded chunk. current_buffer.data.len: {}", current_buffer.data.len()));
+                    // debug_log(&format!("Should trim? {}", self.should_trim_buffer()));
+
+                    let new_size = current_buffer.data.len();
+                    debug_log(&format!("Loaded chunk. New size: {}", new_size));
+                    
+                    // Log before trim
+                    debug_log(&format!("Before trim - start_offset: {}, buffer_size: {}", 
+                        self.start_offset, new_size));     
                     
                     // Trim Buffer
+                    // if self.should_trim_buffer() {
+                    //     debug_log("Trim le Buffeir");
+                    //     let (_, height) = terminal::size().unwrap_or((80, 23));
+                    //     let chunk_size = (height as usize - 1) * 16;
+                    //     self.trim_buffer_top(chunk_size);
+                    // }
+                    // Check if we should trim (after releasing the borrow)
+                    let should_trim = self.should_trim_buffer();
                     if self.should_trim_buffer() {
                         let (_, height) = terminal::size().unwrap_or((80, 23));
                         let chunk_size = (height as usize - 1) * 16;
-                        self.trim_buffer_top(chunk_size);
+                        if chunk_size > 0 {  // Only trim if we have a valid chunk size
+                            debug_log(&format!("Trimming with chunk_size: {}", chunk_size));
+                            self.trim_buffer_top(chunk_size);
+                        } else {
+                            debug_log("Window too small for trimming");
+                        }
                     }
                     
+                    // if should_trim {
+                    //     debug_log("Trimming buffer...");
+                    //     let old_start = self.start_offset;
+                    //     self.trim_buffer_top(chunk_size);
+                        
+                    //     // Get new size after trim
+                    //     let new_size = self.buffr_collection.current().data.len();
+                    //     debug_log(&format!("After trim - start_offset: {} -> {}, buffer_size: {}", 
+                    //         old_start, self.start_offset, new_size));
+                    // }
+
                 },
                 Ok(false) => {
                     debug_log("No more data available");
@@ -1373,15 +1522,30 @@ impl HexView {
             }
         }
             
-        // Check if we can scroll to the next position
-        if next_position >= self.buffr_collection.current().data.len() {
+        // // Check if we can scroll to the next position
+        // if next_position >= self.buffr_collection.current().data.len() {
+        //     debug_log("Cannot scroll further - at end of file");
+        //     return Ok(());
+        // }
+
+        // Check buffer size again after potential modifications
+        let final_size = self.buffr_collection.current().data.len();
+        debug_log(&format!("Final buffer check - size: {}, next_position: {}", 
+            final_size, next_position));
+                
+        if next_position >= final_size {
             debug_log("Cannot scroll further - at end of file");
             return Ok(());
         }
+        
+        // // If we get here, we can safely scroll
+        // self.start_offset = next_position;
+        // debug_log(&format!("Scrolled to new start_offset: {}", self.start_offset));
 
-        // If we get here, we can safely scroll
+        // Update start_offset
+        let old_start = self.start_offset;
         self.start_offset = next_position;
-        debug_log(&format!("Scrolled to new start_offset: {}", self.start_offset));
+        debug_log(&format!("Updated start_offset: {} -> {}", old_start, self.start_offset));
 
         if line_count > (self.size.1 - 1) as usize {
             self.draw(stdout)?;
@@ -1401,6 +1565,109 @@ impl HexView {
             Ok(())
         }
     }
+
+    
+    
+    
+    // fn scroll_down(&mut self, stdout: &mut impl Write, line_count: usize) -> Result<()> {
+    //     // Configurable chunk size (e.g., 368 bytes)
+    //     // default 23 rows x 16 bytes is 368)
+    //     let (_, height) = terminal::size().unwrap_or((80, 23));
+    //     let chunk_size = (height as usize - 1) * 16;  // Subtract status line
+            
+    //     debug_log("\n=== Scroll Down Event ===");
+    //     debug_log(&format!("scroll_down -> chunk_size -> {}", chunk_size));
+    //     debug_log(&format!("Line count: {}", line_count));
+    //     debug_log(&format!("Current start_offset: {}", self.start_offset));
+        
+    //     let current_buffer = self.buffr_collection.current();
+    //     let current_size = current_buffer.data.len();
+    //     debug_log(&format!("Current buffer size: {}", current_size));
+        
+    //     let next_position = self.start_offset + (line_count * 16);
+    //     debug_log(&format!("Next position would be: {}", next_position));
+        
+    //     // Calculate how many rows we can display
+    //     let visible_rows = (self.size.1 - 1) as usize;  // -1 for status line
+    //     let needed_bytes = next_position + (visible_rows * 16);
+    //     debug_log(&format!("Need bytes up to: {}", needed_bytes));
+        
+    //     // // If need more data for full display
+    //     // if needed_bytes > current_size {
+    //     //     debug_log("Loading more data for display");
+    //     //     let current_buffer = self.buffr_collection.current_mut();
+    //     //     match current_buffer.load_next_chunk(64) {
+    //     //         Ok(true) => {
+    //     //             debug_log(&format!("Loaded chunk. New size: {}", current_buffer.data.len()));
+    //     //         },
+    //     //         Ok(false) => debug_log("No more data available"),
+    //     //         Err(e) => debug_log(&format!("Error loading data: {}", e)),
+    //     //     }
+    //     // }
+
+    //     // Calculate next visible range
+    //     let next_visible_end = next_position + (self.size.1 as usize * self.bytes_per_line);
+    //     let current_size = self.buffr_collection.current().data.len();
+    //     debug_log(&format!("Need bytes up to: {}, have: {}", next_visible_end, current_size));
+
+    //     // Try to load more data if needed
+    //     if next_visible_end > current_size {
+    //         let current_buffer = self.buffr_collection.current_mut();
+    //         match current_buffer.load_next_chunk(64) {
+    //             Ok(true) => {
+    //                 debug_log(&format!("Loaded chunk. New size: {}", current_buffer.data.len()));
+    //                 debug_log(&format!("Should trim? {}", self.should_trim_buffer()));
+
+    //                 // Trim Buffer
+    //                 if self.should_trim_buffer() {
+    //                     debug_log("Trim le Buffeir");
+    //                     let (_, height) = terminal::size().unwrap_or((80, 23));
+    //                     let chunk_size = (height as usize - 1) * 16;
+    //                     self.trim_buffer_top(chunk_size);
+    //                 }
+
+    //             },
+    //             Ok(false) => {
+    //                 debug_log("No more data available");
+    //                 if next_position >= current_size {
+    //                     return Ok(());
+    //                 }
+    //             },
+    //             Err(e) => {
+    //                 debug_log(&format!("Error loading data: {}", e));
+    //                 return Err(e);
+    //             }
+    //         }
+    //     }
+            
+    //     // Check if we can scroll to the next position
+    //     if next_position >= self.buffr_collection.current().data.len() {
+    //         debug_log("Cannot scroll further - at end of file");
+    //         return Ok(());
+    //     }
+
+    //     // If we get here, we can safely scroll
+    //     self.start_offset = next_position;
+    //     debug_log(&format!("Scrolled to new start_offset: {}", self.start_offset));
+
+    //     if line_count > (self.size.1 - 1) as usize {
+    //         self.draw(stdout)?;
+    //         Ok(())
+    //     } else {
+    //         queue!(
+    //             stdout,
+    //             terminal::ScrollUp(line_count as u16),
+    //             cursor::MoveTo(0, self.size.1 - 2),
+    //             terminal::Clear(terminal::ClearType::CurrentLine),
+    //         )?;
+
+    //         let mut invalidated_rows: BTreeSet<u16> =
+    //             (self.size.1 - 1 - line_count as u16..=self.size.1 - 2).collect();
+    //         invalidated_rows.extend(0..BytePropertiesFormatter::height() as u16);
+    //         let _ = self.draw_rows(stdout, &invalidated_rows)?;
+    //         Ok(())
+    //     }
+    // }
 
     fn scroll_up(&mut self, stdout: &mut impl Write, line_count: usize) -> Result<()> {
         if self.start_offset < 0x10 * line_count {
