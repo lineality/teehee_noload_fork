@@ -18,10 +18,11 @@ fn debug_log(message: &str) {
     let cwd = env::current_dir().expect("Failed to get current directory");
     let log_path = cwd.join("teehee_debug.log");
 
-    println!("Attempting to log to: {}", log_path.display());
+    // Testprint
+    // println!("Attempting to log to: {}", log_path.display());
 
     // Check if path exists and is writable
-    println!("Path exists: {}", log_path.exists());
+    // println!("Path exists: {}", log_path.exists());
 
     match OpenOptions::new()
         .create(true)
@@ -43,6 +44,7 @@ fn debug_log(message: &str) {
         Err(e) => println!("Failed to open log file: {}", e),
     }
 }
+
 fn main() {
     debug_log("Starting teehee");
 

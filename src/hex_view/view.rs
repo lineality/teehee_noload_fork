@@ -44,36 +44,61 @@ const LEFTARROW: &str = "";
 // Why is this returning a result???
 // todo THis never does ANYTHING
 
+
+
 fn debug_log(message: &str) {
     // Get the current working directory
-    let cwd = env::current_dir().expect("Failed to get current directory");
-    let log_path = cwd.join("teehee_debug.log");
+    if let Ok(cwd) = env::current_dir() {
+        let log_path = cwd.join("teehee_debug.log");
 
-    println!("Attempting to log to: {}", log_path.display());
+        // Check if path exists and is writable
+        if log_path.exists() {
+            // If the path exists, attempt to open the file for writing
+            if let Ok(mut file) = OpenOptions::new()
+                .write(true)
+                .append(true)
+                .open(&log_path) {
 
-    // Check if path exists and is writable
-    println!("Path exists: {}", log_path.exists());
-
-    match OpenOptions::new()
-        .create(true)
-        .write(true)
-        .append(true)
-        .open(&log_path)
-    {
-        Ok(mut file) => {
-            let timestamp = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("Time went backwards")
-                .as_secs();
-
-            match writeln!(file, "[{}] {}", timestamp, message) {
-                Ok(_) => println!("Log written successfully to {}", log_path.display()),
-                Err(e) => println!("Failed to write to log: {}", e),
+                // If the file is opened successfully, get the current time and write the message to the file
+                if let Ok(timestamp) = SystemTime::now().duration_since(UNIX_EPOCH) {
+                    let _ = writeln!(file, "[{}] {}", timestamp.as_secs(), message);
+                }
             }
         }
-        Err(e) => println!("Failed to open log file: {}", e),
     }
 }
+
+// fn debug_log(message: &str) {
+//     // Get the current working directory
+//     let cwd = env::current_dir().expect("Failed to get current directory");
+//     let log_path = cwd.join("teehee_debug.log");
+
+//     // Testprint
+//     // println!("Attempting to log to: {}", log_path.display());
+
+//     // Check if path exists and is writable
+//     // println!("Path exists: {}", log_path.exists());
+
+//     match OpenOptions::new()
+//         .create(true)
+//         .write(true)
+//         .append(true)
+//         .open(&log_path)
+//     {
+//         Ok(mut file) => {
+//             let timestamp = SystemTime::now()
+//                 .duration_since(UNIX_EPOCH)
+//                 .expect("Time went backwards")
+//                 .as_secs();
+
+//             match writeln!(file, "[{}] {}", timestamp, message) {
+//                 Ok(_) => println!("Log written successfully to {}", log_path.display()),
+//                 Err(e) => println!("Failed to write to log: {}", e),
+//             }
+//         }
+//         Err(e) => println!("Failed to open log file: {}", e),
+//     }
+// }
 
 struct MixedRepr(u8);
 
