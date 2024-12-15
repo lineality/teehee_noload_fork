@@ -13,6 +13,8 @@ use std::io::SeekFrom;
 use std::io::Seek;
 use std::io::Read;
 
+use xi_rope::tree::TreeBuilder;
+use xi_rope::Delta;
 
 
 
@@ -35,6 +37,7 @@ pub struct CurrentBuffer {
     history: History,
 }
 
+// in current_buffers.rs
 impl CurrentBuffer {
     pub fn from_data_and_path(data: Vec<u8>, path: Option<impl Into<PathBuf>>) -> CurrentBuffer {
         CurrentBuffer {
@@ -54,36 +57,72 @@ impl CurrentBuffer {
             // Seek to the end of current data
             file.seek(SeekFrom::Start(self.data.len() as u64))?;
             
+            // Read next chunk
             let mut next_chunk = vec![0; chunk_size];
             let bytes_read = file.read(&mut next_chunk)?;
             
             if bytes_read > 0 {
-                // Convert Vec<u8> to Rope
-                let new_data = Rope::from(next_chunk[..bytes_read].to_vec());
-
-                // Remove top chunk if we're getting too large
-                let max_current_buffer_size = chunk_size * 3;  // 2-3x chunk size
-                if self.data.len() > max_current_buffer_size {
-                    // Use slice_to_cow to get a view of the data from chunk_size to end
-                    let remaining_data = self.data.slice_to_cow(chunk_size..);
-                    
-                    // Convert back to Rope
-                    self.data = Rope::from(remaining_data.to_vec());
-                }
-
-                // Create a new Rope that combines existing data and new chunk
-                let mut combined_bytes: Vec<u8> = Vec::from(&self.data);
-                combined_bytes.extend_from_slice(&Vec::<u8>::from(&new_data));
+                // Create new rope from chunk
+                let mut builder = TreeBuilder::new();
+                builder.push_leaf(Bytes(next_chunk[..bytes_read].to_vec()));
+                let chunk_node = builder.build();
                 
-                self.data = Rope::from(combined_bytes);
+                // Create delta for appending
+                let delta = Delta::simple_edit(
+                    Interval::new(self.data.len(), self.data.len()),
+                    chunk_node,
+                    self.data.len()
+                );
+                
+                // Apply the delta to append the new chunk
+                self.data = self.data.apply_delta(&delta);
+                
                 Ok(true)
             } else {
-                Ok(false)  // No more data to load
+                Ok(false)  // No more data to read
             }
         } else {
-            Ok(false)  // No path, can't load
+            Ok(false)  // No file path
         }
     }
+    
+    // pub fn load_next_chunk(&mut self, chunk_size: usize) -> Result<bool, std::io::Error> {
+    //     if let Some(path) = &self.path {
+    //         let mut file = File::open(path)?;
+            
+    //         // Seek to the end of current data
+    //         file.seek(SeekFrom::Start(self.data.len() as u64))?;
+            
+    //         let mut next_chunk = vec![0; chunk_size];
+    //         let bytes_read = file.read(&mut next_chunk)?;
+            
+    //         if bytes_read > 0 {
+    //             // Convert Vec<u8> to Rope
+    //             let new_data = Rope::from(next_chunk[..bytes_read].to_vec());
+
+    //             // Remove top chunk if we're getting too large
+    //             let max_current_buffer_size = chunk_size * 3;  // 2-3x chunk size
+    //             if self.data.len() > max_current_buffer_size {
+    //                 // Use slice_to_cow to get a view of the data from chunk_size to end
+    //                 let remaining_data = self.data.slice_to_cow(chunk_size..);
+                    
+    //                 // Convert back to Rope
+    //                 self.data = Rope::from(remaining_data.to_vec());
+    //             }
+
+    //             // Create a new Rope that combines existing data and new chunk
+    //             let mut combined_bytes: Vec<u8> = Vec::from(&self.data);
+    //             combined_bytes.extend_from_slice(&Vec::<u8>::from(&new_data));
+                
+    //             self.data = Rope::from(combined_bytes);
+    //             Ok(true)
+    //         } else {
+    //             Ok(false)  // No more data to load
+    //         }
+    //     } else {
+    //         Ok(false)  // No path, can't load
+    //     }
+    // }
 
     pub fn name(&self) -> String {
         if let Some(path) = &self.path {
@@ -283,10 +322,12 @@ impl Default for BuffrCollection {
     }
 }
 
+// in current_buffers.rs
 impl BuffrCollection {
-    pub fn load_next_chunk(&mut self, chunk_size: usize) -> Result<bool, std::io::Error> {
-        self.current_mut().load_next_chunk(chunk_size)
-    }
+
+    /*
+    Note: impl BuffrCollection does NOT need a load_next_chunk function at all.
+    */
     
     pub fn new() -> BuffrCollection {
         BuffrCollection::with_current_buffer(CurrentBuffer::default())
