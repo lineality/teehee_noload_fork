@@ -686,6 +686,8 @@ impl HexView {
         Some((normalized_offset / bytes_per_line) as u16)
     }
 
+    // in view.rs
+    // in impl HexView {}
     fn draw_row(
         &self,
         stdout: &mut impl Write,
@@ -1070,8 +1072,42 @@ impl HexView {
             .with_end_style(self.default_style())
         })
     }
+    
+    fn ensure_visible_data(&mut self) -> Result<()> {
+        debug_log("Checking visible data availability");
+        let visible = self.visible_bytes();
+        let current_size = self.buffr_collection.current().data.len();
+        
+        debug_log(&format!("Need bytes up to: {}, have: {}", visible.end, current_size));
+        
+        if visible.end > current_size {
+            debug_log("Need to load more data");
+            let current_buffer = self.buffr_collection.current_mut();
+            match current_buffer.load_next_chunk(64) {
+                Ok(true) => {
+                    debug_log(&format!("Loaded chunk. New size: {}", current_buffer.data.len()));
+                    Ok(())
+                },
+                Ok(false) => {
+                    debug_log("No more data available");
+                    Ok(())
+                },
+                Err(e) => {
+                    debug_log(&format!("Error loading data: {}", e));
+                    Err(e)
+                }
+            }
+        } else {
+            Ok(())
+        }
+    }
+    
 
-    fn draw_rows(&self, stdout: &mut impl Write, invalidated_rows: &BTreeSet<u16>) -> Result<()> {
+    fn draw_rows(&mut self, stdout: &mut impl Write, invalidated_rows: &BTreeSet<u16>) -> Result<()> {
+        
+        // Try to load more data if needed
+        self.ensure_visible_data()?;
+        
         let visible_bytes = self.visible_bytes();
         let start_index = visible_bytes.start;
         let end_index = visible_bytes.end;
@@ -1140,9 +1176,12 @@ impl HexView {
         Ok(())
     }
 
-    fn draw(&self, stdout: &mut impl Write) -> Result<time::Duration> {
+    fn draw(&mut self, stdout: &mut impl Write) -> Result<time::Duration> {
         let begin = time::Instant::now();
 
+        // Try to load more data if needed
+        self.ensure_visible_data()?;
+        
         queue!(
             stdout,
             cursor::MoveTo(0, 0),
@@ -1380,51 +1419,80 @@ impl HexView {
     //     Ok(())
     // }
                 
+
                     
     fn scroll_down(&mut self, stdout: &mut impl Write, line_count: usize) -> Result<()> {
-        
-        debug_log(&format!("\n=== Scroll Down Event ==="));
-        
         // Configurable chunk size (e.g., 368 bytes)
         // default 23 rows x 16 bytes is 368)
         let (_, height) = terminal::size().unwrap_or((80, 23));
         let chunk_size = (height as usize - 1) * 16;  // Subtract status line
-        debug_log(&format!("scroll_down -> chunk_size -> {}", chunk_size));
             
-
+        debug_log("\n=== Scroll Down Event ===");
+        debug_log(&format!("scroll_down -> chunk_size -> {}", chunk_size));
         debug_log(&format!("Line count: {}", line_count));
         debug_log(&format!("Current start_offset: {}", self.start_offset));
-        debug_log(&format!("Current buffer size: {}", self.buffr_collection.current().data.len()));
+        
+        let current_buffer = self.buffr_collection.current();
+        let current_size = current_buffer.data.len();
+        debug_log(&format!("Current buffer size: {}", current_size));
         
         let next_position = self.start_offset + (line_count * 16);
         debug_log(&format!("Next position would be: {}", next_position));
         
-        // First, try to load more data if needed
-        if next_position >= self.buffr_collection.current().data.len() {
-            debug_log(&format!("Need more data: next_position ({}) >= buffer_size ({})", 
-                next_position, self.buffr_collection.current().data.len()));
+        // Calculate how many rows we can display
+        let visible_rows = (self.size.1 - 1) as usize;  // -1 for status line
+        let needed_bytes = next_position + (visible_rows * 16);
+        debug_log(&format!("Need bytes up to: {}", needed_bytes));
+        
+        // // If we need more data for full display
+        // if needed_bytes > current_size {
+        //     debug_log("Loading more data for display");
+        //     let current_buffer = self.buffr_collection.current_mut();
+        //     match current_buffer.load_next_chunk(64) {
+        //         Ok(true) => {
+        //             debug_log(&format!("Loaded chunk. New size: {}", current_buffer.data.len()));
+        //         },
+        //         Ok(false) => debug_log("No more data available"),
+        //         Err(e) => debug_log(&format!("Error loading data: {}", e)),
+        //     }
+        // }
+
+        // Calculate next visible range
+        let next_visible_end = next_position + (self.size.1 as usize * self.bytes_per_line);
+        let current_size = self.buffr_collection.current().data.len();
+        debug_log(&format!("Need bytes up to: {}, have: {}", next_visible_end, current_size));
+
+        
+        // Try to load more data if needed
+        if next_visible_end > current_size {
             let current_buffer = self.buffr_collection.current_mut();
             match current_buffer.load_next_chunk(64) {
                 Ok(true) => {
-                    debug_log(&format!("Successfully loaded next chunk. New buffer size: {}", 
-                        current_buffer.data.len()));
+                    debug_log(&format!("Loaded chunk. New size: {}", current_buffer.data.len()));
                 },
-                Ok(false) => debug_log("No more data to load (EOF reached)"),
-                Err(e) => debug_log(&format!("Error loading chunk: {}", e)),
+                Ok(false) => {
+                    debug_log("No more data available");
+                    if next_position >= current_size {
+                        return Ok(());
+                    }
+                },
+                Err(e) => {
+                    debug_log(&format!("Error loading data: {}", e));
+                    return Err(e);
+                }
             }
         }
-
-        // Now check if we can actually scroll
+            
+        // Check if we can scroll to the next position
         if next_position >= self.buffr_collection.current().data.len() {
-            debug_log(&format!("Cannot scroll: next_position ({}) >= buffer_size ({})", 
-                next_position, self.buffr_collection.current().data.len()));
+            debug_log("Cannot scroll further - at end of file");
             return Ok(());
         }
 
-    // If we get here, we can safely scroll
-    self.start_offset = next_position;
-    debug_log(&format!("Scrolled to new start_offset: {}", self.start_offset));
-        
+        // If we get here, we can safely scroll
+        self.start_offset = next_position;
+        debug_log(&format!("Scrolled to new start_offset: {}", self.start_offset));
+            
         // // If we get here, we can scroll
         // self.start_offset += 0x10 * line_count;
         // debug_log(&format!("New start_offset: {}", self.start_offset));
