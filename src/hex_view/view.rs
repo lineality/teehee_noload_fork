@@ -40,20 +40,22 @@ const VERTICAL: &str = "│";
 const LEFTARROW: &str = "";
 
 // Oh my Uma, it's a Debug-Log... 
-fn debug_log(message: &str) -> std::io::Result<()> {
+// Why is this returning a result???
+// todo THis never does ANYTHING
+fn debug_log(message: &str){
     let mut file = OpenOptions::new()
         .create(true)
         .write(true)
         .append(true)
-        .open("/tmp/teehee_debug.log")?;  // Use /tmp for testing
+        .open("/tmp/teehee_debug.log");  // Use /tmp for testing
 
     let start = SystemTime::now();
     let since_the_epoch = start.duration_since(UNIX_EPOCH).expect("Time went backwards");
     let timestamp = since_the_epoch.as_secs();
 
-    writeln!(file, "[{}] {}", timestamp, message)?;
-    file.flush()?;  // Ensure it's written immediately
-    Ok(())
+    writeln!(file.expect("REASON"), "[{}] {}", timestamp, message);
+
+    // file.flush()?;  // Ensure it's written immediately
 }
 
 struct MixedRepr(u8);
@@ -353,6 +355,8 @@ pub struct HexView {
 
 impl HexView {
     fn is_near_bottom(&self) -> bool {
+        debug_log("is_near_bottom()");
+        
         let current_buffer = self.buffr_collection.current();
         let visible_rows = self.size.1 as usize - 2;  // Subtract status bar
         let bytes_per_line = self.bytes_per_line;
@@ -372,21 +376,21 @@ impl HexView {
 
     // Similar for add_chunk_to_bottom:
     fn add_chunk_to_bottom(&mut self, chunk_size: usize) -> std::result::Result<(), std::io::Error> {
-        debug_log(&format!("Attempting to add chunk to bottom, size={}", chunk_size))?;
+        debug_log(&format!("Attempting to add chunk to bottom, size={}", chunk_size));
         
         let current_buffer = self.buffr_collection.current();
         if let Some(path) = &current_buffer.path {
             let mut file = File::open(path)?;
             let current_data_len = current_buffer.data.len();
             
-            debug_log(&format!("Current buffer size: {}", current_data_len))?;
+            debug_log(&format!("Current buffer size: {}", current_data_len));
             
             file.seek(SeekFrom::Start(current_data_len as u64))?;
             
             let mut next_chunk = vec![0; chunk_size];
             let bytes_read = file.read(&mut next_chunk)?;
             
-            debug_log(&format!("Bytes read from file: {}", bytes_read))?;
+            debug_log(&format!("Bytes read from file: {}", bytes_read));
             
             if bytes_read > 0 {
                 // Create new rope using TreeBuilder
@@ -406,7 +410,7 @@ impl HexView {
                 current_data = current_data.apply_delta(&delta);
                 let new_len = current_data.len();
                 
-                debug_log(&format!("Buffer size changed after append: {} -> {}", old_len, new_len))?;
+                debug_log(&format!("Buffer size changed after append: {} -> {}", old_len, new_len));
                 
                 self.buffr_collection.current_mut().data = current_data;
             }
@@ -446,6 +450,8 @@ impl HexView {
     //     Ok(())
     // }
     fn add_chunk_to_top(&mut self, chunk_size: usize) -> std::result::Result<(), std::io::Error> {
+        debug_log(&format!("add_chunk_to_top, size={:?}", chunk_size));
+        
         let current_buffer = self.buffr_collection.current();
         if let Some(path) = &current_buffer.path {
             let mut file = File::open(path)?;
@@ -497,9 +503,11 @@ impl HexView {
 
     // Then in our functions:
     fn trim_buffer_bottom(&mut self, chunk_size: usize) {
+        debug_log(&format!("trim_buffer_bottom, size={:?}", chunk_size));
+        
         let current_buffer = self.buffr_collection.current_mut();
         debug_log(&format!("Attempting trim_buffer_bottom: current size={}, chunk_size={}", 
-            current_buffer.data.len(), chunk_size)).unwrap_or_else(|e| eprintln!("Logging error: {}", e));
+            current_buffer.data.len(), chunk_size));
 
         if current_buffer.data.len() > chunk_size * 2 {
             let mut builder = SubsetBuilder::new();
@@ -507,21 +515,22 @@ impl HexView {
             let subset = builder.build();
             
             debug_log(&format!("Trimming bottom: start_offset={}, removing {} bytes", 
-                self.start_offset, chunk_size)).unwrap_or_else(|e| eprintln!("Logging error: {}", e));
+                self.start_offset, chunk_size));
             
             let old_len = current_buffer.data.len();
             current_buffer.data = current_buffer.data.without_subset(subset);
             let new_len = current_buffer.data.len();
             
-            debug_log(&format!("Buffer size changed: {} -> {}", old_len, new_len))
-                .unwrap_or_else(|e| eprintln!("Logging error: {}", e));
+            debug_log(&format!("Buffer size changed: {} -> {}", old_len, new_len));
             
             self.start_offset += chunk_size;
         } else {
-            debug_log("Buffer too small for trimming").unwrap_or_else(|e| eprintln!("Logging error: {}", e));
+            debug_log("Buffer too small for trimming");
         }
     }
     fn trim_buffer_top(&mut self, chunk_size: usize) {
+        debug_log(&format!("trim_buffer_top, size={:?}", chunk_size));
+        
         let current_buffer = self.buffr_collection.current_mut();
         if current_buffer.data.len() > chunk_size * 2 {
             let total_len = current_buffer.data.len();
@@ -536,7 +545,10 @@ impl HexView {
         }
     }
     fn manage_buffer(&mut self) -> std::result::Result<(), std::io::Error> {
+
         let chunk_size = 368;  // Your previous chunk size
+        
+        debug_log(&format!("manage_buffer, size={:?}", chunk_size));
         
         if self.is_near_bottom() {
             self.add_chunk_to_bottom(chunk_size)?;
@@ -631,6 +643,7 @@ impl HexView {
         end_style: Option<StylingCommand>,
         byte_properties: &mut BytePropertiesFormatter,
     ) -> Result<()> {
+        debug_log(&format!("draw_row, offset={:?}", offset));
         let row_num = self.offset_to_row(offset).unwrap();
 
         queue!(stdout, cursor::MoveTo(0, row_num))?;
@@ -1262,28 +1275,24 @@ impl HexView {
     // }
 
     fn scroll_down(&mut self, stdout: &mut impl Write, line_count: usize) -> Result<()> {
-        debug_log("Entering scroll_down").unwrap_or_else(|e| eprintln!("Log error: {}", e));
-        
+        debug_log("Entering scroll_down");
         let (_, height) = terminal::size().unwrap_or((80, 23));
         let chunk_size = (height as usize - 1) * 16;  // Subtract status line
         
-        debug_log(&format!("Chunk size: {}", chunk_size))
-            .unwrap_or_else(|e| eprintln!("Log error: {}", e));
+        debug_log(&format!("Chunk size: {}", chunk_size));
+        
 
         // Check if we're near the end and can load more
         if self.start_offset + (line_count * 16) >= self.buffr_collection.current().data.len() {
-            debug_log("Attempting to load next chunk")
-                .unwrap_or_else(|e| eprintln!("Log error: {}", e));
-            
+            debug_log("Attempting to load next chunk");
             if let Err(e) = self.add_chunk_to_bottom(chunk_size) {
                 debug_log(&format!("Error loading chunk: {}", e))
-                    .unwrap_or_else(|e| eprintln!("Log error: {}", e));
+                
             }
         }
 
         if self.visible_bytes().end >= self.buffr_collection.current().data.len() {
-            debug_log("Reached bottom of file")
-                .unwrap_or_else(|e| eprintln!("Log error: {}", e));
+            debug_log("Reached bottom of file");
             return Ok(());
         }
 
@@ -1309,13 +1318,12 @@ impl HexView {
         // Buffer management
         if let Err(e) = self.manage_buffer() {
             debug_log(&format!("Error managing buffer: {}", e))
-                .unwrap_or_else(|e| eprintln!("Log error: {}", e));
         }
 
         let _ = self.draw(stdout)?;  // Handle the Result
         
-        debug_log("Exiting scroll_down")
-            .unwrap_or_else(|e| eprintln!("Log error: {}", e));
+        debug_log("Exiting scroll_down");
+
         
         Ok(())
     }
