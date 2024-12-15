@@ -16,6 +16,44 @@ use std::io::Read;
 use xi_rope::tree::TreeBuilder;
 use xi_rope::Delta;
 
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::env;
+use std::time::{
+    SystemTime, 
+    UNIX_EPOCH
+};
+
+fn debug_log(message: &str) {
+    /*
+    use std::fs::OpenOptions;
+    use std::io::Write;    
+    use std::env;
+    use std::time::{
+        SystemTime, 
+        UNIX_EPOCH
+    };
+    */
+    // Get the current working directory
+    if let Ok(cwd) = env::current_dir() {
+        let log_path = cwd.join("teehee_debug.log");
+
+        // Check if path exists and is writable
+        if log_path.exists() {
+            // If the path exists, attempt to open the file for writing
+            if let Ok(mut file) = OpenOptions::new()
+                .write(true)
+                .append(true)
+                .open(&log_path) {
+
+                // If the file is opened successfully, get the current time and write the message to the file
+                if let Ok(timestamp) = SystemTime::now().duration_since(UNIX_EPOCH) {
+                    let _ = writeln!(file, "[{}] {}", timestamp.as_secs(), message);
+                }
+            }
+        }
+    }
+}
 
 
 #[derive(Debug, PartialEq, Clone, Copy, Eq, Hash)]
@@ -51,17 +89,28 @@ impl CurrentBuffer {
     }
 
     pub fn load_next_chunk(&mut self, chunk_size: usize) -> Result<bool, std::io::Error> {
+        debug_log("Entering load_next_chunk");
+        
         if let Some(path) = &self.path {
+            debug_log(&format!("Loading from path: {:?}", path));
             let mut file = File::open(path)?;
+            
+            // Log current position and file size
+            let file_size = file.metadata()?.len();
+            debug_log(&format!("File size: {}, Current buffer size: {}", 
+                file_size, self.data.len()));
             
             // Seek to the end of current data
             file.seek(SeekFrom::Start(self.data.len() as u64))?;
+            debug_log(&format!("Seeking to position: {}", self.data.len()));
             
             // Read next chunk
             let mut next_chunk = vec![0; chunk_size];
             let bytes_read = file.read(&mut next_chunk)?;
+            debug_log(&format!("Bytes read: {}", bytes_read));
             
             if bytes_read > 0 {
+                debug_log("Creating new rope from chunk");
                 // Create new rope from chunk
                 let mut builder = TreeBuilder::new();
                 builder.push_leaf(Bytes(next_chunk[..bytes_read].to_vec()));
@@ -75,16 +124,58 @@ impl CurrentBuffer {
                 );
                 
                 // Apply the delta to append the new chunk
+                let old_size = self.data.len();
                 self.data = self.data.apply_delta(&delta);
+                debug_log(&format!("Buffer size changed: {} -> {}", 
+                    old_size, self.data.len()));
                 
                 Ok(true)
             } else {
+                debug_log("No more data to read");
                 Ok(false)  // No more data to read
             }
         } else {
+            debug_log("No file path available");
             Ok(false)  // No file path
         }
     }
+        
+    
+    // pub fn load_next_chunk(&mut self, chunk_size: usize) -> Result<bool, std::io::Error> {
+    //     if let Some(path) = &self.path {
+    //         let mut file = File::open(path)?;
+            
+    //         // Seek to the end of current data
+    //         file.seek(SeekFrom::Start(self.data.len() as u64))?;
+            
+    //         // Read next chunk
+    //         let mut next_chunk = vec![0; chunk_size];
+    //         let bytes_read = file.read(&mut next_chunk)?;
+            
+    //         if bytes_read > 0 {
+    //             // Create new rope from chunk
+    //             let mut builder = TreeBuilder::new();
+    //             builder.push_leaf(Bytes(next_chunk[..bytes_read].to_vec()));
+    //             let chunk_node = builder.build();
+                
+    //             // Create delta for appending
+    //             let delta = Delta::simple_edit(
+    //                 Interval::new(self.data.len(), self.data.len()),
+    //                 chunk_node,
+    //                 self.data.len()
+    //             );
+                
+    //             // Apply the delta to append the new chunk
+    //             self.data = self.data.apply_delta(&delta);
+                
+    //             Ok(true)
+    //         } else {
+    //             Ok(false)  // No more data to read
+    //         }
+    //     } else {
+    //         Ok(false)  // No file path
+    //     }
+    // }
     
     // pub fn load_next_chunk(&mut self, chunk_size: usize) -> Result<bool, std::io::Error> {
     //     if let Some(path) = &self.path {

@@ -28,8 +28,10 @@ use xi_rope::{
 use xi_rope::tree::TreeBuilder;
 use xi_rope::multiset::SubsetBuilder;
 use crate::byte_rope::Bytes;  // TODO Horrible name that will collide this must be changed
-use std::time::{SystemTime, UNIX_EPOCH};
-
+use std::time::{
+    SystemTime, 
+    UNIX_EPOCH
+};
 use super::byte_properties::BytePropertiesFormatter;
 use super::{make_padding, PrioritizedStyle, Priority, StylingCommand};
 use crate::current_buffer::*;
@@ -45,10 +47,16 @@ const LEFTARROW: &str = "";
 // Oh my Uma, it's a Debug-Log... 
 // Why is this returning a result???
 // todo THis never does ANYTHING
-
-
-
 fn debug_log(message: &str) {
+    /*
+    use std::fs::OpenOptions;
+    use std::io::Write;    
+    use std::env;
+    use std::time::{
+        SystemTime, 
+        UNIX_EPOCH
+    };
+    */
     // Get the current working directory
     if let Ok(cwd) = env::current_dir() {
         let log_path = cwd.join("teehee_debug.log");
@@ -1372,46 +1380,54 @@ impl HexView {
     //     Ok(())
     // }
                 
+                    
     fn scroll_down(&mut self, stdout: &mut impl Write, line_count: usize) -> Result<()> {
-    
+        
+        debug_log(&format!("\n=== Scroll Down Event ==="));
+        
         // Configurable chunk size (e.g., 368 bytes)
         // default 23 rows x 16 bytes is 368)
         let (_, height) = terminal::size().unwrap_or((80, 23));
         let chunk_size = (height as usize - 1) * 16;  // Subtract status line
-    
-    
-        debug_log(&format!("\n=== Scroll Down Event ==="));
+        debug_log(&format!("scroll_down -> chunk_size -> {}", chunk_size));
+            
+
         debug_log(&format!("Line count: {}", line_count));
         debug_log(&format!("Current start_offset: {}", self.start_offset));
         debug_log(&format!("Current buffer size: {}", self.buffr_collection.current().data.len()));
-        debug_log(&format!("Visible bytes end: {}", self.visible_bytes().end));
         
-        // Check if we need to load more data
         let next_position = self.start_offset + (line_count * 16);
         debug_log(&format!("Next position would be: {}", next_position));
         
+        // First, try to load more data if needed
         if next_position >= self.buffr_collection.current().data.len() {
-            debug_log("Attempting to load next chunk");
+            debug_log(&format!("Need more data: next_position ({}) >= buffer_size ({})", 
+                next_position, self.buffr_collection.current().data.len()));
             let current_buffer = self.buffr_collection.current_mut();
-            match current_buffer.load_next_chunk(chunk_size) {
-                Ok(true) => debug_log("Successfully loaded next chunk"),
-                Ok(false) => debug_log("No more data to load"),
+            match current_buffer.load_next_chunk(64) {
+                Ok(true) => {
+                    debug_log(&format!("Successfully loaded next chunk. New buffer size: {}", 
+                        current_buffer.data.len()));
+                },
+                Ok(false) => debug_log("No more data to load (EOF reached)"),
                 Err(e) => debug_log(&format!("Error loading chunk: {}", e)),
             }
-            debug_log(&format!("Buffer size after load attempt: {}", 
-                self.buffr_collection.current().data.len()));
         }
 
-        if self.visible_bytes().end >= self.buffr_collection.current().data.len() {
-            debug_log("Reached bottom of file - stopping scroll");
+        // Now check if we can actually scroll
+        if next_position >= self.buffr_collection.current().data.len() {
+            debug_log(&format!("Cannot scroll: next_position ({}) >= buffer_size ({})", 
+                next_position, self.buffr_collection.current().data.len()));
             return Ok(());
         }
 
-        // If we get here, we can scroll
-        self.start_offset += 0x10 * line_count;
-        debug_log(&format!("New start_offset: {}", self.start_offset));
-
-        self.start_offset += 0x10 * line_count;
+    // If we get here, we can safely scroll
+    self.start_offset = next_position;
+    debug_log(&format!("Scrolled to new start_offset: {}", self.start_offset));
+        
+        // // If we get here, we can scroll
+        // self.start_offset += 0x10 * line_count;
+        // debug_log(&format!("New start_offset: {}", self.start_offset));
 
         if line_count > (self.size.1 - 1) as usize {
             self.draw(stdout)?;
@@ -1431,6 +1447,65 @@ impl HexView {
             Ok(())
         }
     }
+          
+                
+    // fn scroll_down(&mut self, stdout: &mut impl Write, line_count: usize) -> Result<()> {
+    
+    //     // Configurable chunk size (e.g., 368 bytes)
+    //     // default 23 rows x 16 bytes is 368)
+    //     let (_, height) = terminal::size().unwrap_or((80, 23));
+    //     let chunk_size = (height as usize - 1) * 16;  // Subtract status line
+    //     debug_log(&format!("scroll_down chunk_size: {}", chunk_size));
+        
+    //     debug_log(&format!("\n=== Scroll Down Event ==="));
+    //     debug_log(&format!("Line count: {}", line_count));
+    //     debug_log(&format!("Current start_offset: {}", self.start_offset));
+    //     debug_log(&format!("Current buffer size: {}", self.buffr_collection.current().data.len()));
+    //     debug_log(&format!("Visible bytes end: {}", self.visible_bytes().end));
+        
+    //     // Check if we need to load more data
+    //     let next_position = self.start_offset + (line_count * 16);
+    //     debug_log(&format!("Next position would be: {}", next_position));
+        
+    //     if next_position >= self.buffr_collection.current().data.len() {
+    //         debug_log("Attempting to load next chunk");
+    //         let current_buffer = self.buffr_collection.current_mut();
+    //         match current_buffer.load_next_chunk(chunk_size) {
+    //             Ok(true) => debug_log("Successfully loaded next chunk"),
+    //             Ok(false) => debug_log("No more data to load"),
+    //             Err(e) => debug_log(&format!("Error loading chunk: {}", e)),
+    //         }
+    //         debug_log(&format!("Buffer size after load attempt: {}", 
+    //             self.buffr_collection.current().data.len()));
+    //     }
+
+    //     if self.visible_bytes().end >= self.buffr_collection.current().data.len() {
+    //         debug_log("Reached bottom of file - stopping scroll");
+    //         return Ok(());
+    //     }
+
+    //     // If we get here, we can scroll
+    //     self.start_offset += 0x10 * line_count;
+    //     debug_log(&format!("New start_offset: {}", self.start_offset));
+
+    //     if line_count > (self.size.1 - 1) as usize {
+    //         self.draw(stdout)?;
+    //         Ok(())
+    //     } else {
+    //         queue!(
+    //             stdout,
+    //             terminal::ScrollUp(line_count as u16),
+    //             cursor::MoveTo(0, self.size.1 - 2),
+    //             terminal::Clear(terminal::ClearType::CurrentLine),
+    //         )?;
+
+    //         let mut invalidated_rows: BTreeSet<u16> =
+    //             (self.size.1 - 1 - line_count as u16..=self.size.1 - 2).collect();
+    //         invalidated_rows.extend(0..BytePropertiesFormatter::height() as u16);
+    //         let _ = self.draw_rows(stdout, &invalidated_rows)?;
+    //         Ok(())
+    //     }
+    // }
                 
     fn scroll_up(&mut self, stdout: &mut impl Write, line_count: usize) -> Result<()> {
         if self.start_offset < 0x10 * line_count {
