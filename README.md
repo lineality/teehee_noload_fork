@@ -4,9 +4,10 @@
 # Original Teehee here:
 https://github.com/Gskartwii/teehee/releases
 #### For more information see the real Teehee (it's awsome)
+Appologies if I did not correctly put attributes to the author in the .toml file;
+Anything broken in this experimental fork is my fault and not the original author.
 
 ## Fork: This is an experimental fork of the original Gskartwii project.
-Any horribleness is totally on me. 
 
 ## Implemented keybinds (from original version Readme)
 * `hjkl` for movement (press shift to extend selection instead)
@@ -104,4 +105,3 @@ the file.
 
 2. Being able to open to a "place" in the file, which may not have 'lines'
 
-3. Covering more than 16bit view will be another possible idea.

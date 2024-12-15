@@ -24,6 +24,8 @@ use std::time::{
     UNIX_EPOCH
 };
 
+const DEBUG_LOG: bool = false;
+
 fn debug_log(message: &str) {
     /*
     use std::fs::OpenOptions;
@@ -34,21 +36,22 @@ fn debug_log(message: &str) {
         UNIX_EPOCH
     };
     */
-    // Get the current working directory
-    if let Ok(cwd) = env::current_dir() {
-        let log_path = cwd.join("teehee_debug.log");
+    if DEBUG_LOG {
+        if let Ok(cwd) = env::current_dir() {
+            let log_path = cwd.join("teehee_debug.log");
 
-        // Check if path exists and is writable
-        if log_path.exists() {
-            // If the path exists, attempt to open the file for writing
-            if let Ok(mut file) = OpenOptions::new()
-                .write(true)
-                .append(true)
-                .open(&log_path) {
+            // Check if path exists and is writable
+            if log_path.exists() {
+                // If the path exists, attempt to open the file for writing
+                if let Ok(mut file) = OpenOptions::new()
+                    .write(true)
+                    .append(true)
+                    .open(&log_path) {
 
-                // If the file is opened successfully, get the current time and write the message to the file
-                if let Ok(timestamp) = SystemTime::now().duration_since(UNIX_EPOCH) {
-                    let _ = writeln!(file, "[{}] {}", timestamp.as_secs(), message);
+                    // If the file is opened successfully, get the current time and write the message to the file
+                    if let Ok(timestamp) = SystemTime::now().duration_since(UNIX_EPOCH) {
+                        let _ = writeln!(file, "[{}] {}", timestamp.as_secs(), message);
+                    }
                 }
             }
         }

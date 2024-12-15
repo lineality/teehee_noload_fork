@@ -53,6 +53,8 @@ const LEFTARROW: &str = "";
 // Oh my Uma, it's a Debug-Log... 
 // Why is this returning a result???
 // todo THis never does ANYTHING
+const DEBUG_LOG: bool = false;
+
 fn debug_log(message: &str) {
     /*
     use std::fs::OpenOptions;
@@ -63,26 +65,28 @@ fn debug_log(message: &str) {
         UNIX_EPOCH
     };
     */
-    // Get the current working directory
-    if let Ok(cwd) = env::current_dir() {
-        let log_path = cwd.join("teehee_debug.log");
+    if DEBUG_LOG {
+        if let Ok(cwd) = env::current_dir() {
+            let log_path = cwd.join("teehee_debug.log");
 
-        // Check if path exists and is writable
-        if log_path.exists() {
-            // If the path exists, attempt to open the file for writing
-            if let Ok(mut file) = OpenOptions::new()
-                .write(true)
-                .append(true)
-                .open(&log_path) {
+            // Check if path exists and is writable
+            if log_path.exists() {
+                // If the path exists, attempt to open the file for writing
+                if let Ok(mut file) = OpenOptions::new()
+                    .write(true)
+                    .append(true)
+                    .open(&log_path) {
 
-                // If the file is opened successfully, get the current time and write the message to the file
-                if let Ok(timestamp) = SystemTime::now().duration_since(UNIX_EPOCH) {
-                    let _ = writeln!(file, "[{}] {}", timestamp.as_secs(), message);
+                    // If the file is opened successfully, get the current time and write the message to the file
+                    if let Ok(timestamp) = SystemTime::now().duration_since(UNIX_EPOCH) {
+                        let _ = writeln!(file, "[{}] {}", timestamp.as_secs(), message);
+                    }
                 }
             }
         }
     }
 }
+
 
 struct MixedRepr(u8);
 
@@ -496,6 +500,53 @@ impl HexView {
         Ok(())
     }
 
+    /// # Trim Buffer Bottom Function
+    /// 
+    /// This function trims the bottom portion of a buffer that uses a custom Rope implementation
+    /// for handling binary data. The function is part of a windowing/pagination system for large files.
+    /// 
+    /// ## Technical Details
+    /// - Uses a custom Rope implementation (CustomByteRope) specifically designed for binary data
+    /// - Maintains a fixed-size window of data in memory
+    /// - Implements trimming through xi-rope's TreeBuilder system
+    /// 
+    /// ## Data Structure Details
+    /// The function works with:
+    /// - CustomByteRope: A specialized rope implementation for binary data
+    /// - TreeBuilder: Xi-rope's builder for creating rope structures
+    /// - Bytes: A wrapper struct for Vec<u8> that implements the Leaf trait
+    /// 
+    /// ## Parameters
+    /// * `chunk_size`: The number of bytes to trim from the bottom of the buffer
+    /// 
+    /// ## Implementation Notes
+    /// 1. Safety Checks:
+    ///    - Prevents trimming if chunk_size is 0
+    ///    - Prevents trimming if buffer is too small (less than 2x chunk_size)
+    ///    - Maintains minimum buffer size requirements
+    /// 
+    /// 2. Rope Construction Process:
+    ///    - Creates a TreeBuilder instance
+    ///    - Collects chunks from the existing rope using iter_chunks
+    ///    - Wraps the collected bytes in the Bytes struct
+    ///    - Builds a new rope with the remaining data
+    /// 
+    /// 3. Buffer Management:
+    ///    - Updates start_offset to reflect the trimmed portion
+    ///    - Maintains proper buffer boundaries
+    ///    - Handles edge cases for small buffers
+    /// 
+    /// ## Common Issues and Solutions
+    /// - Empty Segment Error: Prevented by checking chunks.is_empty()
+    /// - Type Mismatches: Resolved by using CustomByteRope wrapper
+    /// - Memory Management: Handled through proper chunk size calculations
+    /// 
+    /// ## Example Buffer Flow:
+    /// ```text
+    /// Initial Buffer: [A B C D E F G H]  (size 8)
+    /// chunk_size: 3
+    /// After Trim:   [A B C D E]         (size 5)
+    /// ```
     fn trim_buffer_bottom(&mut self, chunk_size: usize) {
         debug_log(&format!("trim_buffer_bottom, size={:?}", chunk_size));
         
@@ -536,6 +587,69 @@ impl HexView {
         }
     }
 
+    /// # Trim Buffer Top Function
+    /// 
+    /// This function trims the top portion of a buffer using a custom Rope implementation.
+    /// It's essential for maintaining a sliding window view of large files in memory.
+    /// 
+    /// ## Technical Details
+    /// - Implements top-down trimming for a custom binary Rope structure
+    /// - Part of a larger pagination/windowing system
+    /// - Uses xi-rope's underlying tree structure
+    /// 
+    /// ## Data Structure Relationships
+    /// ```text
+    /// CustomByteRope
+    ///   └─ Node<RopeInfo>
+    ///       └─ Bytes(Vec<u8>)
+    /// ```
+    /// 
+    /// ## Parameters
+    /// * `chunk_size`: The number of bytes to remove from the top of the buffer
+    /// 
+    /// ## Implementation Notes
+    /// 1. Buffer Management:
+    ///    - Maintains buffer size constraints
+    ///    - Updates start_offset for proper position tracking
+    ///    - Handles boundary conditions
+    /// 
+    /// 2. Data Processing Flow:
+    ///    a. Validates input and buffer size
+    ///    b. Extracts required portion using iter_chunks
+    ///    c. Rebuilds rope structure with TreeBuilder
+    ///    d. Updates buffer state
+    /// 
+    /// 3. Safety Considerations:
+    ///    - Prevents buffer underflow
+    ///    - Maintains minimum size requirements
+    ///    - Handles edge cases for small files
+    /// 
+    /// ## Error Prevention
+    /// - Checks for minimum buffer size (2 * chunk_size)
+    /// - Validates chunk_size > 0
+    /// - Ensures proper rope structure maintenance
+    /// 
+    /// ## Memory Management
+    /// - Creates new rope structure efficiently
+    /// - Properly handles data transfer between old and new ropes
+    /// - Maintains leaf size constraints
+    /// 
+    /// ## Example Operation:
+    /// ```text
+    /// Before: [A B C D E F G H]  (offset 0)
+    /// Trim 3: [D E F G H]        (offset 3)
+    /// ```
+    /// 
+    /// ## Related Components
+    /// - Buffer Interface
+    /// - File Loading System
+    /// - Pagination Controller
+    /// 
+    /// ## Common Debugging Points
+    /// 1. Offset Calculations
+    /// 2. Rope Structure Integrity
+    /// 3. Memory Usage Patterns
+    /// 4. Edge Case Handling
     fn trim_buffer_top(&mut self, chunk_size: usize) {
         debug_log("\n=== Trim Buffer Top ===");
         debug_log(&format!("trim_buffer_top, size={:?}", chunk_size));
@@ -572,141 +686,7 @@ impl HexView {
             self.start_offset = self.start_offset.saturating_sub(chunk_size);
         }
     }
-        
-    // fn trim_buffer_bottom(&mut self, chunk_size: usize) {
-    //     debug_log(&format!("trim_buffer_bottom, size={:?}", chunk_size));
-        
-    //     let current_buffer = self.buffr_collection.current_mut();
-    //     debug_log(&format!("Attempting trim_buffer_bottom: current size={}, chunk_size={}", 
-    //         current_buffer.data.len(), chunk_size));
 
-    //     if current_buffer.data.len() > chunk_size * 2 {
-    //         let mut builder = SubsetBuilder::new();
-    //         builder.push_segment(chunk_size, 1);
-    //         let subset = builder.build();
-            
-    //         debug_log(&format!("Trimming bottom: start_offset={}, removing {} bytes", 
-    //             self.start_offset, chunk_size));
-            
-    //         let old_len = current_buffer.data.len();
-    //         current_buffer.data = current_buffer.data.without_subset(subset);
-    //         let new_len = current_buffer.data.len();
-            
-    //         debug_log(&format!("Buffer size changed: {} -> {}", old_len, new_len));
-            
-    //         self.start_offset += chunk_size;
-    //     } else {
-    //         debug_log("Buffer too small for trimming");
-    //     }
-    // }
-    
-    // // fn trim_buffer_top(&mut self, chunk_size: usize) {
-    // //     debug_log("\n=== Trim Buffer Top ===");
-    // //     debug_log(&format!("trim_buffer_top, size={:?}", chunk_size));
-        
-    // //     let current_buffer = self.buffr_collection.current_mut();
-    // //     let total_len = current_buffer.data.len();
-        
-    // //     // Safety checks
-    // //     if chunk_size == 0 || total_len <= chunk_size * 2 {
-    // //         debug_log(&format!("Cannot trim: chunk_size={}, total_len={}", chunk_size, total_len));
-    // //         return;
-    // //     }
-
-    // //     // Create a subset marking the first chunk_size bytes for removal
-    // //     let mut builder = SubsetBuilder::new();
-    // //     builder.push_segment(0, chunk_size);  // Mark first chunk_size bytes
-    // //     let subset = builder.build();
-        
-    // //     debug_log(&format!("Trimming first {} bytes from buffer of size {}", chunk_size, total_len));
-        
-    // //     let old_len = current_buffer.data.len();
-    // //     current_buffer.data = current_buffer.data.without_subset(subset);
-    // //     let new_len = current_buffer.data.len();
-        
-    // //     debug_log(&format!("Buffer trimmed: {} -> {}", old_len, new_len));
-        
-    // //     // Update start_offset to account for removed bytes
-    // //     self.start_offset = self.start_offset.saturating_sub(chunk_size);
-    // // }
-    // fn trim_buffer_top(&mut self, chunk_size: usize) {
-    //     debug_log("\n=== Trim Buffer Top ===");
-    //     debug_log(&format!("trim_buffer_top, size={:?}", chunk_size));
-        
-    //     // Safety checks
-    //     if chunk_size == 0 {
-    //         debug_log("Cannot trim zero bytes");
-    //         return;
-    //     }
-        
-    //     let current_buffer = self.buffr_collection.current_mut();
-    //     let total_len = current_buffer.data.len();
-        
-    //     // Ensure we have enough data to trim
-    //     if total_len <= chunk_size * 2 {
-    //         debug_log(&format!("Buffer too small to trim: {} <= {}", total_len, chunk_size * 2));
-    //         return;
-    //     }
-
-    //     // Ensure we're not trimming the entire buffer
-    //     let trim_size = std::cmp::min(chunk_size, total_len - chunk_size);
-    //     if trim_size == 0 {
-    //         debug_log("No data to trim");
-    //         return;
-    //     }
-        
-    //     let mut builder = SubsetBuilder::new();
-    //     builder.push_segment(0, trim_size);
-    //     let subset = builder.build();
-        
-    //     let old_len = current_buffer.data.len();
-    //     current_buffer.data = current_buffer.data.without_subset(subset);
-    //     let new_len = current_buffer.data.len();
-        
-    //     debug_log(&format!("Buffer trimmed: {} -> {}", old_len, new_len));
-    // }
-        
-    
-    // fn trim_buffer_top(&mut self, chunk_size: usize) {
-    //     debug_log("\n=== Trim Buffer Top ===");
-    //     debug_log(&format!("trim_buffer_top, size={:?}", chunk_size));
-        
-    //     let current_buffer = self.buffr_collection.current_mut();
-    //     if current_buffer.data.len() > chunk_size * 2 {
-    //         let total_len = current_buffer.data.len();
-            
-    //         // Only trim the first chunk_size bytes
-    //         let mut builder = SubsetBuilder::new();
-    //         builder.push_segment(0, chunk_size);  // Mark first chunk_size bytes
-    //         let subset = builder.build();
-            
-    //         let old_len = current_buffer.data.len();
-    //         current_buffer.data = current_buffer.data.without_subset(subset);
-    //         let new_len = current_buffer.data.len();
-            
-    //         debug_log(&format!("Buffer trimmed: {} -> {}", old_len, new_len));
-    //     }
-    // }
-    
-    
-    //
-    // fn trim_buffer_top(&mut self, chunk_size: usize) {
-    //     debug_log("\n=== Trim Buffer Top ===");
-    //     debug_log(&format!("trim_buffer_top, size={:?}", chunk_size));
-        
-    //     let current_buffer = self.buffr_collection.current_mut();
-    //     if current_buffer.data.len() > chunk_size * 2 {
-    //         let total_len = current_buffer.data.len();
-            
-    //         // Create a subset marking the last chunk_size bytes for deletion
-    //         let mut builder = SubsetBuilder::new();
-    //         builder.push_segment(total_len - chunk_size, 1);  // Mark last chunk_size bytes with count 1
-    //         let subset = builder.build();
-            
-    //         // Remove the marked bytes
-    //         current_buffer.data = current_buffer.data.without_subset(subset);
-    //     }
-    // }
     fn manage_buffer(&mut self) -> std::result::Result<(), std::io::Error> {
 
         let chunk_size = 368;  // Your previous chunk size
@@ -742,17 +722,6 @@ impl HexView {
         }
     }
 
-    // fn is_near_bottom(&self) -> bool {
-    //     let total_buffer_size = self.buffr_collection.current().data.len();
-    //     let cursor_percentage = (self.cursor_position as f32 / total_buffer_size as f32) * 100.0;
-    //     cursor_percentage >= 95.0
-    // }
-
-    // fn is_near_top(&self) -> bool {
-    //     let cursor_percentage = (self.cursor_position as f32 / self.buffr_collection.current().data.len() as f32) * 100.0;
-    //     cursor_percentage <= 5.0
-    // }
-    
     pub fn set_bytes_per_line(&mut self, bpl: usize) {
         self.bytes_per_line = bpl;
     }
@@ -784,14 +753,12 @@ impl HexView {
         queue!(stdout, style::Print(format!("{} ", VERTICAL)))
     }
     
-    
     /// Safely calculates if an offset is within valid bounds
     fn is_valid_offset(&self, offset: usize) -> bool {
         let buffer_size = self.buffr_collection.current().data.len();
         offset < buffer_size
     }
     
-
     /// Converts a byte offset in the file to a screen row number (0-based).
     /// 
     /// # Details
@@ -847,20 +814,6 @@ impl HexView {
         }
         Ok(row as u16)
     }
-    
-    
-    // fn offset_to_row(&self, offset: usize) -> Option<u16> {
-    //     if offset < self.start_offset {
-    //         return None;
-    //     }
-    //     let normalized_offset = offset - self.start_offset;
-    //     let bytes_per_line = self.bytes_per_line;
-    //     let max_bytes = bytes_per_line * self.size.1 as usize;
-    //     if normalized_offset > max_bytes {
-    //         return None;
-    //     }
-    //     Some((normalized_offset / bytes_per_line) as u16)
-    // }
 
     // in view.rs
     // in impl HexView {}
@@ -1646,109 +1599,6 @@ impl HexView {
             Ok(())
         }
     }
-
-    
-    
-    
-    // fn scroll_down(&mut self, stdout: &mut impl Write, line_count: usize) -> Result<()> {
-    //     // Configurable chunk size (e.g., 368 bytes)
-    //     // default 23 rows x 16 bytes is 368)
-    //     let (_, height) = terminal::size().unwrap_or((80, 23));
-    //     let chunk_size = (height as usize - 1) * 16;  // Subtract status line
-            
-    //     debug_log("\n=== Scroll Down Event ===");
-    //     debug_log(&format!("scroll_down -> chunk_size -> {}", chunk_size));
-    //     debug_log(&format!("Line count: {}", line_count));
-    //     debug_log(&format!("Current start_offset: {}", self.start_offset));
-        
-    //     let current_buffer = self.buffr_collection.current();
-    //     let current_size = current_buffer.data.len();
-    //     debug_log(&format!("Current buffer size: {}", current_size));
-        
-    //     let next_position = self.start_offset + (line_count * 16);
-    //     debug_log(&format!("Next position would be: {}", next_position));
-        
-    //     // Calculate how many rows we can display
-    //     let visible_rows = (self.size.1 - 1) as usize;  // -1 for status line
-    //     let needed_bytes = next_position + (visible_rows * 16);
-    //     debug_log(&format!("Need bytes up to: {}", needed_bytes));
-        
-    //     // // If need more data for full display
-    //     // if needed_bytes > current_size {
-    //     //     debug_log("Loading more data for display");
-    //     //     let current_buffer = self.buffr_collection.current_mut();
-    //     //     match current_buffer.load_next_chunk(64) {
-    //     //         Ok(true) => {
-    //     //             debug_log(&format!("Loaded chunk. New size: {}", current_buffer.data.len()));
-    //     //         },
-    //     //         Ok(false) => debug_log("No more data available"),
-    //     //         Err(e) => debug_log(&format!("Error loading data: {}", e)),
-    //     //     }
-    //     // }
-
-    //     // Calculate next visible range
-    //     let next_visible_end = next_position + (self.size.1 as usize * self.bytes_per_line);
-    //     let current_size = self.buffr_collection.current().data.len();
-    //     debug_log(&format!("Need bytes up to: {}, have: {}", next_visible_end, current_size));
-
-    //     // Try to load more data if needed
-    //     if next_visible_end > current_size {
-    //         let current_buffer = self.buffr_collection.current_mut();
-    //         match current_buffer.load_next_chunk(64) {
-    //             Ok(true) => {
-    //                 debug_log(&format!("Loaded chunk. New size: {}", current_buffer.data.len()));
-    //                 debug_log(&format!("Should trim? {}", self.should_trim_buffer()));
-
-    //                 // Trim Buffer
-    //                 if self.should_trim_buffer() {
-    //                     debug_log("Trim le Buffeir");
-    //                     let (_, height) = terminal::size().unwrap_or((80, 23));
-    //                     let chunk_size = (height as usize - 1) * 16;
-    //                     self.trim_buffer_top(chunk_size);
-    //                 }
-
-    //             },
-    //             Ok(false) => {
-    //                 debug_log("No more data available");
-    //                 if next_position >= current_size {
-    //                     return Ok(());
-    //                 }
-    //             },
-    //             Err(e) => {
-    //                 debug_log(&format!("Error loading data: {}", e));
-    //                 return Err(e);
-    //             }
-    //         }
-    //     }
-            
-    //     // Check if we can scroll to the next position
-    //     if next_position >= self.buffr_collection.current().data.len() {
-    //         debug_log("Cannot scroll further - at end of file");
-    //         return Ok(());
-    //     }
-
-    //     // If we get here, we can safely scroll
-    //     self.start_offset = next_position;
-    //     debug_log(&format!("Scrolled to new start_offset: {}", self.start_offset));
-
-    //     if line_count > (self.size.1 - 1) as usize {
-    //         self.draw(stdout)?;
-    //         Ok(())
-    //     } else {
-    //         queue!(
-    //             stdout,
-    //             terminal::ScrollUp(line_count as u16),
-    //             cursor::MoveTo(0, self.size.1 - 2),
-    //             terminal::Clear(terminal::ClearType::CurrentLine),
-    //         )?;
-
-    //         let mut invalidated_rows: BTreeSet<u16> =
-    //             (self.size.1 - 1 - line_count as u16..=self.size.1 - 2).collect();
-    //         invalidated_rows.extend(0..BytePropertiesFormatter::height() as u16);
-    //         let _ = self.draw_rows(stdout, &invalidated_rows)?;
-    //         Ok(())
-    //     }
-    // }
 
     fn scroll_up(&mut self, stdout: &mut impl Write, line_count: usize) -> Result<()> {
         if self.start_offset < 0x10 * line_count {
