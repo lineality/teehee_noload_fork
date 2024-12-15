@@ -35,27 +35,44 @@ use crate::hex_view::OutputColorizer;
 use crate::modes;
 use crate::modes::mode::{DirtyBytes, Mode, ModeTransition};
 use crate::selection::Direction;
-
+// use std::path::Path;
+use std::env;
 const VERTICAL: &str = "│";
 const LEFTARROW: &str = "";
 
 // Oh my Uma, it's a Debug-Log... 
 // Why is this returning a result???
 // todo THis never does ANYTHING
-fn debug_log(message: &str){
-    let mut file = OpenOptions::new()
+
+fn debug_log(message: &str) {
+    // Get the current working directory
+    let cwd = env::current_dir().expect("Failed to get current directory");
+    let log_path = cwd.join("teehee_debug.log");
+
+    println!("Attempting to log to: {}", log_path.display());
+
+    // Check if path exists and is writable
+    println!("Path exists: {}", log_path.exists());
+
+    match OpenOptions::new()
         .create(true)
         .write(true)
         .append(true)
-        .open("/tmp/teehee_debug.log");  // Use /tmp for testing
+        .open(&log_path)
+    {
+        Ok(mut file) => {
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("Time went backwards")
+                .as_secs();
 
-    let start = SystemTime::now();
-    let since_the_epoch = start.duration_since(UNIX_EPOCH).expect("Time went backwards");
-    let timestamp = since_the_epoch.as_secs();
-
-    writeln!(file.expect("REASON"), "[{}] {}", timestamp, message);
-
-    // file.flush()?;  // Ensure it's written immediately
+            match writeln!(file, "[{}] {}", timestamp, message) {
+                Ok(_) => println!("Log written successfully to {}", log_path.display()),
+                Err(e) => println!("Failed to write to log: {}", e),
+            }
+        }
+        Err(e) => println!("Failed to open log file: {}", e),
+    }
 }
 
 struct MixedRepr(u8);
