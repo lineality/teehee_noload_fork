@@ -972,7 +972,7 @@ impl HexView {
         let (_, height) = terminal::size().unwrap_or((80, 23));
         let chunk_size = (height as usize - 1) * 16;  // Subtract status line
         
-        let chunk_size = 368;  // Your current setting
+        // let chunk_size = 368;  // Your current settings
         
         // // Try to load next chunk if near end of current current_buffer
         // if self.start_offset + (line_count * 16) >= self.buffr_collection.current().data.len() {
