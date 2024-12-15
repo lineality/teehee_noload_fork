@@ -425,7 +425,6 @@ impl HexView {
         self.start_offset < (self.buffr_collection.current().data.len() / 10)
     }
 
-
     // Similar for add_chunk_to_bottom:
     fn add_chunk_to_bottom(&mut self, chunk_size: usize) -> std::result::Result<(), std::io::Error> {
         debug_log(&format!("Attempting to add chunk to bottom, size={}", chunk_size));
@@ -469,38 +468,7 @@ impl HexView {
         }
         Ok(())
     }    
-    // fn add_chunk_to_bottom(&mut self, chunk_size: usize) -> std::result::Result<(), std::io::Error> {
-    //     let current_buffer = self.buffr_collection.current();
-    //     if let Some(path) = &current_buffer.path {
-    //         let mut file = File::open(path)?;
-    //         let current_data_len = current_buffer.data.len();
-            
-    //         file.seek(SeekFrom::Start(current_data_len as u64))?;
-            
-    //         let mut next_chunk = vec![0; chunk_size];
-    //         let bytes_read = file.read(&mut next_chunk)?;
-            
-    //         if bytes_read > 0 {
-    //             // Create new rope using TreeBuilder
-    //             let mut builder = TreeBuilder::new();
-    //             builder.push_leaf(Bytes(next_chunk[..bytes_read].to_vec()));
-    //             let chunk_node = builder.build();
-                
-    //             // Create delta
-    //             let delta = Delta::simple_edit(
-    //                 Interval::new(current_data_len, current_data_len), 
-    //                 chunk_node,
-    //                 current_buffer.data.len()
-    //             );
-                
-    //             // Apply delta
-    //             let mut current_data = current_buffer.data.clone();
-    //             current_data = current_data.apply_delta(&delta);
-    //             self.buffr_collection.current_mut().data = current_data;
-    //         }
-    //     }
-    //     Ok(())
-    // }
+
     fn add_chunk_to_top(&mut self, chunk_size: usize) -> std::result::Result<(), std::io::Error> {
         debug_log(&format!("add_chunk_to_top, size={:?}", chunk_size));
         
@@ -539,21 +507,7 @@ impl HexView {
         }
         Ok(())
     }
-    // fn trim_buffer_bottom(&mut self, chunk_size: usize) {
-    //     let current_buffer = self.buffr_collection.current_mut();
-    //     if current_buffer.data.len() > chunk_size * 2 {
-    //         // Create a subset marking the first chunk_size bytes for deletion
-    //         let mut builder = SubsetBuilder::new();
-    //         builder.push_segment(chunk_size, 1);  // Mark first chunk_size bytes with count 1
-    //         let subset = builder.build();
-            
-    //         // Remove the marked bytes
-    //         current_buffer.data = current_buffer.data.without_subset(subset);
-    //         self.start_offset += chunk_size;
-    //     }
-    // }
 
-    // Then in our functions:
     fn trim_buffer_bottom(&mut self, chunk_size: usize) {
         debug_log(&format!("trim_buffer_bottom, size={:?}", chunk_size));
         
