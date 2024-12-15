@@ -11,7 +11,7 @@ use crate::modes::{
     mode::{Mode, ModeTransition},
     normal::Normal,
 };
-use crate::Buffers;
+use crate::BuffrCollection;
 
 pub struct Command {
     pub command: String,
@@ -46,7 +46,7 @@ mod cmd {
     use crate::modes::mode::DirtyBytes;
     use crate::modes::quitting;
 
-    pub fn quit(buf: &mut Buffers, _: &str) -> ModeTransition {
+    pub fn quit(buf: &mut BuffrCollection, _: &str) -> ModeTransition {
         if buf.iter().any(|x| x.dirty && x.path.is_some()) {
             ModeTransition::new_mode_and_info(
                 Normal::new(),
@@ -57,11 +57,11 @@ mod cmd {
         }
     }
 
-    pub fn force_quit(_: &mut Buffers, _: &str) -> ModeTransition {
+    pub fn force_quit(_: &mut BuffrCollection, _: &str) -> ModeTransition {
         ModeTransition::new_mode(quitting::Quitting {})
     }
 
-    pub fn write(buf: &mut Buffers, filename: &str) -> ModeTransition {
+    pub fn write(buf: &mut BuffrCollection, filename: &str) -> ModeTransition {
         let path = if filename.is_empty() {
             buf.current().path.as_deref()
         } else {
@@ -82,12 +82,12 @@ mod cmd {
             buf_mut.update_path_if_missing(owned_path);
             ModeTransition::new_mode(Normal::new())
         } else {
-            ModeTransition::new_mode_and_info(Normal::new(), "buffer has no path".into())
+            ModeTransition::new_mode_and_info(Normal::new(), "current_buffer has no path".into())
         }
     }
 
-    pub fn write_all(buffers: &mut Buffers, _: &str) -> ModeTransition {
-        for buf in buffers.iter_mut() {
+    pub fn write_all(buffr_collection: &mut BuffrCollection, _: &str) -> ModeTransition {
+        for buf in buffr_collection.iter_mut() {
             if let Some(path) = buf.path.as_ref() {
                 if let Err(e) = fs::write(&path, buf.data.slice_to_cow(..)) {
                     return ModeTransition::new_mode_and_info(
@@ -101,8 +101,8 @@ mod cmd {
         ModeTransition::new_mode(Normal::new())
     }
 
-    pub fn write_quit(buffers: &mut Buffers, _: &str) -> ModeTransition {
-        for buf in buffers.iter_mut() {
+    pub fn write_quit(buffr_collection: &mut BuffrCollection, _: &str) -> ModeTransition {
+        for buf in buffr_collection.iter_mut() {
             if let Some(path) = buf.path.as_ref() {
                 if let Err(e) = fs::write(&path, buf.data.slice_to_cow(..)) {
                     return ModeTransition::new_mode_and_info(
@@ -116,32 +116,32 @@ mod cmd {
         ModeTransition::new_mode(quitting::Quitting {})
     }
 
-    pub fn edit(buffers: &mut Buffers, filename: &str) -> ModeTransition {
-        let result = buffers.switch_buffer(filename);
+    pub fn edit(buffr_collection: &mut BuffrCollection, filename: &str) -> ModeTransition {
+        let result = buffr_collection.switch_current_buffer(filename);
         if let Err(e) = result {
             return ModeTransition::new_mode_and_info(Normal::new(), format!("{}", e));
         }
         ModeTransition::new_mode_and_dirty(Normal::new(), DirtyBytes::ChangeLength)
     }
 
-    pub fn delete_buffer(buffers: &mut Buffers, _: &str) -> ModeTransition {
-        if buffers.current().dirty && buffers.current().path.is_some() {
+    pub fn delete_current_buffer(buffr_collection: &mut BuffrCollection, _: &str) -> ModeTransition {
+        if buffr_collection.current().dirty && buffr_collection.current().path.is_some() {
             return ModeTransition::new_mode_and_info(
                 Normal::new(),
-                "buffer is dirty, use :db! if you're sure".to_string(),
+                "current_buffer is dirty, use :db! if you're sure".to_string(),
             );
         }
-        buffers.delete_current();
+        buffr_collection.delete_current();
         ModeTransition::new_mode_and_dirty(Normal::new(), DirtyBytes::ChangeLength)
     }
 
-    pub fn force_delete_buffer(buffers: &mut Buffers, _: &str) -> ModeTransition {
-        buffers.delete_current();
+    pub fn force_delete_current_buffer(buffr_collection: &mut BuffrCollection, _: &str) -> ModeTransition {
+        buffr_collection.delete_current();
         ModeTransition::new_mode_and_dirty(Normal::new(), DirtyBytes::ChangeLength)
     }
 }
 
-type CommandHandler = fn(&mut Buffers, &str) -> ModeTransition;
+type CommandHandler = fn(&mut BuffrCollection, &str) -> ModeTransition;
 
 macro_rules! make_commands {
     ($($string:tt => $cmd:ident,)*) => {
@@ -164,10 +164,10 @@ fn default_commands() -> HashMap<String, CommandHandler> {
         "write-all" => write_all,
         "e" => edit,
         "edit" => edit,
-        "db" => delete_buffer,
-        "delete-buffer" => delete_buffer,
-        "db!" => force_delete_buffer,
-        "delete-buffer!" => force_delete_buffer,
+        "db" => delete_current_buffer,
+        "delete-current_buffer" => delete_current_buffer,
+        "db!" => force_delete_current_buffer,
+        "delete-current_buffer!" => force_delete_current_buffer,
     ]
 }
 
@@ -184,12 +184,12 @@ impl Command {
         }
     }
 
-    fn finish(&self, buffers: &mut Buffers) -> ModeTransition {
+    fn finish(&self, buffr_collection: &mut BuffrCollection) -> ModeTransition {
         let (name, rest) = self
             .command
             .split_at(self.command.find(' ').unwrap_or_else(|| self.command.len()));
         if let Some(handler) = DEFAULT_COMMANDS.get(name) {
-            handler(buffers, if rest.is_empty() { rest } else { &rest[1..] })
+            handler(buffr_collection, if rest.is_empty() { rest } else { &rest[1..] })
         } else {
             ModeTransition::new_mode_and_info(Normal::new(), format!("Unknown command {}", name))
         }
@@ -201,7 +201,7 @@ impl Mode for Command {
         "COMMAND".into()
     }
 
-    fn transition(&self, evt: &Event, buffers: &mut Buffers, _: usize) -> Option<ModeTransition> {
+    fn transition(&self, evt: &Event, buffr_collection: &mut BuffrCollection, _: usize) -> Option<ModeTransition> {
         if let Some(action) = DEFAULT_MAPS.event_to_action(evt) {
             let mut cursor = self.cursor;
             let mut command = self.command.to_owned();
@@ -224,7 +224,7 @@ impl Mode for Command {
                 }
                 Action::CursorRight => {}
                 Action::Cancel => return Some(ModeTransition::new_mode(Normal::new())),
-                Action::Finish => return Some(self.finish(buffers)),
+                Action::Finish => return Some(self.finish(buffr_collection)),
             }
             Some(ModeTransition::new_mode(Command { command, cursor }))
         } else if let Event::Key(KeyEvent {

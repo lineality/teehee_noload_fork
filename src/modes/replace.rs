@@ -10,7 +10,7 @@ use crate::modes::{
     normal::Normal,
 };
 use crate::operations as ops;
-use crate::Buffers;
+use crate::BuffrCollection;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Replace {
@@ -44,8 +44,8 @@ impl Mode for Replace {
         }
     }
 
-    fn transition(&self, evt: &Event, buffers: &mut Buffers, _: usize) -> Option<ModeTransition> {
-        let buffer = buffers.current_mut();
+    fn transition(&self, evt: &Event, buffr_collection: &mut BuffrCollection, _: usize) -> Option<ModeTransition> {
+        let current_buffer = buffr_collection.current_mut();
         if let Event::Key(KeyEvent {
             code: KeyCode::Char(ch),
             modifiers,
@@ -54,10 +54,10 @@ impl Mode for Replace {
             if let Some(action) = DEFAULT_MAPS.event_to_action(evt) {
                 return match action {
                     Action::Null => {
-                        let delta = ops::replace(&buffer.data, &buffer.selection, 0);
+                        let delta = ops::replace(&current_buffer.data, &current_buffer.selection, 0);
                         Some(ModeTransition::new_mode_and_dirty(
                             Normal::new(),
-                            buffer.apply_delta(delta),
+                            current_buffer.apply_delta(delta),
                         ))
                     }
                 };
@@ -68,10 +68,10 @@ impl Mode for Replace {
             }
 
             if !self.hex {
-                let delta = ops::replace(&buffer.data, &buffer.selection, *ch as u8); // lossy!
+                let delta = ops::replace(&current_buffer.data, &current_buffer.selection, *ch as u8); // lossy!
                 Some(ModeTransition::new_mode_and_dirty(
                     Normal::new(),
-                    buffer.apply_delta(delta),
+                    current_buffer.apply_delta(delta),
                 ))
             } else if self.hex_half.is_none() {
                 if !ch.is_ascii_hexdigit() {
@@ -89,10 +89,10 @@ impl Mode for Replace {
                 }
 
                 let replacing_ch = (ch.to_digit(16).unwrap() as u8) | self.hex_half.unwrap();
-                let delta = ops::replace(&buffer.data, &buffer.selection, replacing_ch); // lossy!
+                let delta = ops::replace(&current_buffer.data, &current_buffer.selection, replacing_ch); // lossy!
                 Some(ModeTransition::new_mode_and_dirty(
                     Normal::new(),
-                    buffer.apply_delta(delta),
+                    current_buffer.apply_delta(delta),
                 ))
             }
         } else if let Event::Key(_) = evt {

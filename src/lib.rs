@@ -1,6 +1,6 @@
 #![deny(clippy::all)]
 
-mod buffer;
+mod current_buffer;
 mod byte_rope;
 pub mod hex_view;
 mod history;
@@ -11,4 +11,4 @@ mod modes;
 mod operations;
 mod selection;
 
-pub use buffer::{Buffer, Buffers};
+pub use current_buffer::{CurrentBuffer, BuffrCollection};

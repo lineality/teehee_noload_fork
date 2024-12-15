@@ -50,7 +50,7 @@ Teehee supports multiple selections, efficient selection modifying commands and 
     * `o`: 16 bytes (Oword)
     * `n`: delimited by null bytes
     * `/`: matching a text pattern (`?` for hex pattern)
-* `d` to delete selected data from buffer
+* `d` to delete selected data from current_buffer
 * `i` to enter insert mode at the beginning of selections (`I` to insert hex instead of ascii)
     * `a` instead of `i` to enter append mode instead
     * `o` instead of `i` to enter overwrite mode instead
@@ -69,14 +69,14 @@ Teehee supports multiple selections, efficient selection modifying commands and 
 * `u` to undo, `U` to redo
 * `:` to enter command mode
     * `:q` to quit
-    * `:q!` to force quit (even if buffer dirty)
-    * `:w` to flush buffer to disk
-    * `:w <filename>` to save buffer to named file
-    * `:wa` to flush all buffers to disk
-    * `:e <filename>` to open a new buffer
-    * `:db` to close a buffer
-    * `:db!` to close a buffer even if dirty
-    * `:wq` to flush buffer, then quit
+    * `:q!` to force quit (even if current_buffer dirty)
+    * `:w` to flush current_buffer to disk
+    * `:w <filename>` to save current_buffer to named file
+    * `:wa` to flush all buffr_collection to disk
+    * `:e <filename>` to open a new current_buffer
+    * `:db` to close a current_buffer
+    * `:db!` to close a current_buffer even if dirty
+    * `:wq` to flush current_buffer, then quit
 
 Entering a pattern:
 

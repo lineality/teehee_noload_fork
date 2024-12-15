@@ -11,7 +11,7 @@ use crate::modes::{
 };
 use crate::operations as ops;
 use crate::selection::Direction;
-use crate::{Buffer, Buffers};
+use crate::{CurrentBuffer, BuffrCollection};
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub enum InsertionMode {
@@ -59,7 +59,7 @@ lazy_static! {
 
 fn transition_ascii_insertion(
     key: char,
-    buffer: &mut Buffer,
+    current_buffer: &mut CurrentBuffer,
     mode: InsertionMode,
 ) -> ModeTransition {
     let mut inserted_bytes = vec![0u8; key.len_utf8()];
@@ -67,19 +67,19 @@ fn transition_ascii_insertion(
 
     match mode {
         InsertionMode::Append | InsertionMode::Insert => {
-            let delta = ops::insert(&buffer.data, &buffer.selection, inserted_bytes);
-            ModeTransition::DirtyBytes(buffer.apply_incomplete_delta(delta))
+            let delta = ops::insert(&current_buffer.data, &current_buffer.selection, inserted_bytes);
+            ModeTransition::DirtyBytes(current_buffer.apply_incomplete_delta(delta))
         }
         InsertionMode::Overwrite => {
-            let delta = ops::change(&buffer.data, &buffer.selection, inserted_bytes);
-            ModeTransition::DirtyBytes(buffer.apply_incomplete_delta(delta))
+            let delta = ops::change(&current_buffer.data, &current_buffer.selection, inserted_bytes);
+            ModeTransition::DirtyBytes(current_buffer.apply_incomplete_delta(delta))
         }
     }
 }
 
 fn transition_hex_insertion(
     key: char,
-    buffer: &mut Buffer,
+    current_buffer: &mut CurrentBuffer,
     mode: InsertionMode,
     hex_half: Option<u8>,
 ) -> Option<ModeTransition> {
@@ -94,37 +94,37 @@ fn transition_hex_insertion(
     if insert_half {
         match mode {
             InsertionMode::Append | InsertionMode::Insert => {
-                let delta = ops::insert(&buffer.data, &buffer.selection, vec![to_insert]);
+                let delta = ops::insert(&current_buffer.data, &current_buffer.selection, vec![to_insert]);
                 Some(ModeTransition::new_mode_and_dirty(
                     Insert {
                         mode,
                         hex: true,
                         hex_half: Some(to_insert),
                     },
-                    buffer.apply_incomplete_delta_offset_carets(delta, -1, 0),
+                    current_buffer.apply_incomplete_delta_offset_carets(delta, -1, 0),
                 ))
             }
             InsertionMode::Overwrite => {
-                let delta = ops::overwrite_half(&buffer.data, &buffer.selection, to_insert);
+                let delta = ops::overwrite_half(&current_buffer.data, &current_buffer.selection, to_insert);
                 Some(ModeTransition::new_mode_and_dirty(
                     Insert {
                         mode,
                         hex: true,
                         hex_half: Some(to_insert),
                     },
-                    buffer.apply_incomplete_delta_offset_carets(delta, -1, 0),
+                    current_buffer.apply_incomplete_delta_offset_carets(delta, -1, 0),
                 ))
             }
         }
     } else {
-        let delta = ops::change(&buffer.data, &buffer.selection, vec![to_insert]);
+        let delta = ops::change(&current_buffer.data, &current_buffer.selection, vec![to_insert]);
         Some(ModeTransition::new_mode_and_dirty(
             Insert {
                 mode,
                 hex: true,
                 hex_half: None,
             },
-            buffer.apply_incomplete_delta(delta),
+            current_buffer.apply_incomplete_delta(delta),
         ))
     }
 }
@@ -148,10 +148,10 @@ impl Mode for Insert {
     fn transition(
         &self,
         evt: &Event,
-        buffers: &mut Buffers,
+        buffr_collection: &mut BuffrCollection,
         bytes_per_line: usize,
     ) -> Option<ModeTransition> {
-        let buffer = buffers.current_mut();
+        let current_buffer = buffr_collection.current_mut();
         if let Some(action) = DEFAULT_MAPS.event_to_action(evt) {
             let new_state = if self.hex_half.is_some() {
                 Insert {
@@ -163,15 +163,15 @@ impl Mode for Insert {
             };
             Some(match action {
                 Action::Exit => {
-                    buffer.commit_delta(); // Flush this insertion as a single action
+                    current_buffer.commit_delta(); // Flush this insertion as a single action
                     ModeTransition::new_mode(Normal::new())
                 }
                 Action::InsertNull => {
                     let inserted_bytes = vec![0];
-                    let delta = ops::insert(&buffer.data, &buffer.selection, inserted_bytes);
+                    let delta = ops::insert(&current_buffer.data, &current_buffer.selection, inserted_bytes);
                     ModeTransition::new_mode_and_dirty(
                         new_state,
-                        buffer.apply_incomplete_delta(delta),
+                        current_buffer.apply_incomplete_delta(delta),
                     )
                 }
                 Action::SwitchInputMode => ModeTransition::new_mode(Insert {
@@ -180,42 +180,42 @@ impl Mode for Insert {
                     hex_half: None,
                 }),
                 Action::RemoveLast | Action::RemoveThis if self.hex_half.is_some() => {
-                    if buffer.data.is_empty() {
+                    if current_buffer.data.is_empty() {
                         return Some(ModeTransition::None);
                     }
-                    let delta = ops::delete_cursor(&buffer.data, &buffer.selection);
+                    let delta = ops::delete_cursor(&current_buffer.data, &current_buffer.selection);
                     ModeTransition::new_mode_and_dirty(
                         new_state,
-                        buffer.apply_incomplete_delta(delta),
+                        current_buffer.apply_incomplete_delta(delta),
                     )
                 }
                 Action::RemoveLast => {
-                    if buffer.data.is_empty() {
+                    if current_buffer.data.is_empty() {
                         return Some(ModeTransition::None);
                     }
-                    let delta = ops::backspace(&buffer.data, &buffer.selection);
-                    ModeTransition::DirtyBytes(buffer.apply_incomplete_delta(delta))
+                    let delta = ops::backspace(&current_buffer.data, &current_buffer.selection);
+                    ModeTransition::DirtyBytes(current_buffer.apply_incomplete_delta(delta))
                 }
                 Action::RemoveThis => {
-                    if buffer.data.is_empty() {
+                    if current_buffer.data.is_empty() {
                         return Some(ModeTransition::None);
                     }
-                    let delta = ops::delete_cursor(&buffer.data, &buffer.selection);
-                    ModeTransition::DirtyBytes(buffer.apply_incomplete_delta(delta))
+                    let delta = ops::delete_cursor(&current_buffer.data, &current_buffer.selection);
+                    ModeTransition::DirtyBytes(current_buffer.apply_incomplete_delta(delta))
                 }
                 Action::Move(direction) => {
                     let is_hex_half = self.hex_half.is_some();
                     if is_hex_half {
-                        transition_hex_insertion('0', buffer, self.mode, self.hex_half);
+                        transition_hex_insertion('0', current_buffer, self.mode, self.hex_half);
                     }
-                    let max_bytes = buffer.data.len();
+                    let max_bytes = current_buffer.data.len();
                     ModeTransition::new_mode_and_dirty(
                         Insert {
                             mode: self.mode,
                             hex: self.hex,
                             hex_half: None,
                         },
-                        buffer.map_selections(|region| {
+                        current_buffer.map_selections(|region| {
                             let mut region =
                                 region.simple_move(direction, bytes_per_line, max_bytes, 1);
                             if is_hex_half {
@@ -241,9 +241,9 @@ impl Mode for Insert {
             }
 
             if self.hex {
-                transition_hex_insertion(*key, buffer, self.mode, self.hex_half)
+                transition_hex_insertion(*key, current_buffer, self.mode, self.hex_half)
             } else {
-                Some(transition_ascii_insertion(*key, buffer, self.mode))
+                Some(transition_ascii_insertion(*key, current_buffer, self.mode))
             }
         } else {
             None

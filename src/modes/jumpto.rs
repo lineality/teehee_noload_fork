@@ -10,7 +10,7 @@ use crate::modes::{
     normal::Normal,
 };
 use crate::selection::Direction;
-use crate::Buffers;
+use crate::BuffrCollection;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct JumpTo {
@@ -48,20 +48,20 @@ impl Mode for JumpTo {
     fn transition(
         &self,
         evt: &Event,
-        buffers: &mut Buffers,
+        buffr_collection: &mut BuffrCollection,
         bytes_per_line: usize,
     ) -> Option<ModeTransition> {
-        let buffer = buffers.current_mut();
+        let current_buffer = buffr_collection.current_mut();
         if let Some(direction) = DEFAULT_MAPS.event_to_action(evt) {
-            let max_bytes = buffer.data.len();
+            let max_bytes = current_buffer.data.len();
             Some(ModeTransition::new_mode_and_dirty(
                 Normal::new(),
                 if self.extend {
-                    buffer.map_selections(|region| {
+                    current_buffer.map_selections(|region| {
                         vec![region.extend_to_boundary(direction, bytes_per_line, max_bytes)]
                     })
                 } else {
-                    buffer.map_selections(|region| {
+                    current_buffer.map_selections(|region| {
                         vec![region.jump_to_boundary(direction, bytes_per_line, max_bytes)]
                     })
                 },

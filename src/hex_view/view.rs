@@ -17,7 +17,7 @@ use xi_rope::Interval;
 
 use super::byte_properties::BytePropertiesFormatter;
 use super::{make_padding, PrioritizedStyle, Priority, StylingCommand};
-use crate::buffer::*;
+use crate::current_buffer::*;
 use crate::hex_view::OutputColorizer;
 use crate::modes;
 use crate::modes::mode::{DirtyBytes, Mode, ModeTransition};
@@ -308,7 +308,7 @@ impl StatusLinePrompter for modes::command::Command {
 }
 
 pub struct HexView {
-    buffers: Buffers,
+    buffr_collection: BuffrCollection,
     size: (u16, u16),
     bytes_per_line: usize,
     start_offset: usize,
@@ -322,9 +322,9 @@ pub struct HexView {
 }
 
 impl HexView {
-    pub fn with_buffers(buffers: Buffers) -> HexView {
+    pub fn with_buffr_collection(buffr_collection: BuffrCollection) -> HexView {
         HexView {
-            buffers,
+            buffr_collection,
             bytes_per_line: 0x10,
             start_offset: 0,
             size: terminal::size().unwrap(),
@@ -451,7 +451,7 @@ impl HexView {
     fn visible_bytes(&self) -> Range<usize> {
         self.start_offset
             ..cmp::min(
-                self.buffers.current().data.len() + 1,
+                self.buffr_collection.current().data.len() + 1,
                 self.start_offset + (self.size.1 - 1) as usize * self.bytes_per_line,
             )
     }
@@ -519,7 +519,7 @@ impl HexView {
     fn mark_commands(&self, visible: Range<usize>) -> Vec<StylingCommand> {
         let mut mark_commands = vec![StylingCommand::default(); visible.len()];
         let mut selected_regions = self
-            .buffers
+            .buffr_collection
             .current()
             .selection
             .regions_in_range(visible.start, visible.end);
@@ -603,7 +603,7 @@ impl HexView {
     }
 
     fn calculate_powerline_length(&self) -> usize {
-        let buf = self.buffers.current();
+        let buf = self.buffr_collection.current();
         let mut length = 0;
         length += 1; // leftarrow
         length += 2 + buf.name().len();
@@ -634,15 +634,15 @@ impl HexView {
     }
 
     fn draw_statusline_here(&self, stdout: &mut impl Write) -> Result<()> {
-        let buf = self.buffers.current();
+        let buf = self.buffr_collection.current();
         queue!(
             stdout,
             style::PrintStyledContent(style::style(LEFTARROW).with(Color::Red)),
             style::PrintStyledContent(
                 style::style(format!(
                     " {}{} ",
-                    self.buffers.current().name(),
-                    if self.buffers.current().dirty {
+                    self.buffr_collection.current().name(),
+                    if self.buffr_collection.current().dirty {
                         "[+]"
                     } else {
                         ""
@@ -750,7 +750,7 @@ impl HexView {
     }
 
     fn overflow_cursor_style(&self) -> Option<StylingCommand> {
-        self.buffers.current().overflow_sel_style().map(|style| {
+        self.buffr_collection.current().overflow_sel_style().map(|style| {
             match style {
                 OverflowSelectionStyle::CursorTail | OverflowSelectionStyle::Cursor
                     if self.mode.has_half_cursor() =>
@@ -772,7 +772,7 @@ impl HexView {
         let end_index = visible_bytes.end;
 
         let visible_bytes_cow = self
-            .buffers
+            .buffr_collection
             .current()
             .data
             .slice_to_cow(start_index..end_index);
@@ -781,7 +781,7 @@ impl HexView {
         let mark_commands = self.mark_commands(visible_bytes.clone());
 
         let current_bytes = self
-            .buffers
+            .buffr_collection
             .current()
             .selection
             .regions_in_range(visible_bytes.start, visible_bytes.end)
@@ -812,7 +812,7 @@ impl HexView {
                 &visible_bytes_cow[normalized_i..normalized_end],
                 i,
                 &mark_commands[normalized_i..normalized_end],
-                if i + self.bytes_per_line > self.buffers.current().data.len() {
+                if i + self.bytes_per_line > self.buffr_collection.current().data.len() {
                     self.overflow_cursor_style()
                 } else {
                     None
@@ -848,7 +848,7 @@ impl HexView {
         let start_index = visible_bytes.start;
         let end_index = visible_bytes.end;
         let visible_bytes_cow = self
-            .buffers
+            .buffr_collection
             .current()
             .data
             .slice_to_cow(start_index..end_index);
@@ -857,7 +857,7 @@ impl HexView {
         let mark_commands = self.mark_commands(visible_bytes.clone());
 
         let current_bytes = self
-            .buffers
+            .buffr_collection
             .current()
             .selection
             .regions_in_range(visible_bytes.start, visible_bytes.end)
@@ -884,7 +884,7 @@ impl HexView {
                 &visible_bytes_cow[normalized_i..normalized_end],
                 i,
                 &mark_commands[normalized_i..normalized_end],
-                if i + self.bytes_per_line > self.buffers.current().data.len() {
+                if i + self.bytes_per_line > self.buffr_collection.current().data.len() {
                     self.overflow_cursor_style()
                 } else {
                     None
@@ -924,11 +924,20 @@ impl HexView {
             }
             Event::Key(KeyEvent { code, modifiers }) => match (code, modifiers) {
                 (KeyCode::Char('e'), KeyModifiers::CONTROL) => {
-                    let buffer = self.buffers.current_mut();
-                    let max_bytes = buffer.data.len();
+                    
+                    // Configurable chunk size (e.g., 368 bytes)
+                    // default 23 rows x 16 bytes is 368)
+                    let (_, height) = terminal::size().unwrap_or((80, 23));
+                    let chunk_size = (height as usize - 1) * 16;  // Subtract status line
+                    let _ = self.buffr_collection.current_mut().load_next_chunk(chunk_size)?;
+                             
+                    // In view or wherever scrolling occurs
+                    // let _ = self.buffr_collection.current_mut().load_next_chunk(chunk_size)?;
+                    let current_buffer = self.buffr_collection.current_mut();
+                    let max_bytes = current_buffer.data.len();
                     let bytes_per_line = self.bytes_per_line;
 
-                    buffer.map_selections(|region| {
+                    current_buffer.map_selections(|region| {
                         vec![region.simple_move(Direction::Down, bytes_per_line, max_bytes, 1)]
                     });
 
@@ -937,11 +946,12 @@ impl HexView {
                     Ok(())
                 }
                 (KeyCode::Char('y'), KeyModifiers::CONTROL) => {
-                    let buffer = self.buffers.current_mut();
-                    let max_bytes = buffer.data.len();
+                    // let _ = self.buffr_collection.current_mut().load_next_chunk(chunk_size)?;
+                    let current_buffer = self.buffr_collection.current_mut();
+                    let max_bytes = current_buffer.data.len();
                     let bytes_per_line = self.bytes_per_line;
 
-                    buffer.map_selections(|region| {
+                    current_buffer.map_selections(|region| {
                         vec![region.simple_move(Direction::Up, bytes_per_line, max_bytes, 1)]
                     });
 
@@ -955,8 +965,27 @@ impl HexView {
         }
     }
 
+    // fn scroll_down(&mut self, stdout: &mut impl Write, line_count: usize) -> Result<()> {
     fn scroll_down(&mut self, stdout: &mut impl Write, line_count: usize) -> Result<()> {
-        if self.visible_bytes().end >= self.buffers.current().data.len() {
+        
+        
+        let (_, height) = terminal::size().unwrap_or((80, 23));
+        let chunk_size = (height as usize - 1) * 16;  // Subtract status line
+        
+        let chunk_size = 368;  // Your current setting
+        
+        // // Try to load next chunk if near end of current current_buffer
+        // if self.start_offset + (line_count * 16) >= self.buffr_collection.current().data.len() {
+        //     self.buffr_collection.load_next_chunk(self.buffr_collection.current(), chunk_size)?;
+        // }
+        // Check if we're near the end and can load more
+        if self.start_offset + (line_count * 16) >= self.buffr_collection.current().data.len() {
+            let _ = self.buffr_collection.load_next_chunk(chunk_size)?;
+        }
+
+        
+        
+        if self.visible_bytes().end >= self.buffr_collection.current().data.len() {
             // we already reach the bottom of the file
             return Ok(());
         }
@@ -1009,12 +1038,12 @@ impl HexView {
     }
 
     fn maybe_update_offset(&mut self, stdout: &mut impl Write) -> Result<()> {
-        if self.buffers.current().data.is_empty() {
+        if self.buffr_collection.current().data.is_empty() {
             self.start_offset = 0;
             return Ok(());
         }
 
-        let main_cursor_offset = self.buffers.current().selection.main_cursor_offset();
+        let main_cursor_offset = self.buffr_collection.current().selection.main_cursor_offset();
         let visible_bytes = self.visible_bytes();
         let delta = if main_cursor_offset < visible_bytes.start {
             main_cursor_offset as isize - visible_bytes.start as isize
@@ -1035,7 +1064,7 @@ impl HexView {
     }
 
     fn maybe_update_offset_and_draw(&mut self, stdout: &mut impl Write) -> Result<()> {
-        let main_cursor_offset = self.buffers.current().selection.main_cursor_offset();
+        let main_cursor_offset = self.buffr_collection.current().selection.main_cursor_offset();
         let visible_bytes = self.visible_bytes();
         if main_cursor_offset < visible_bytes.start {
             self.start_offset = main_cursor_offset - main_cursor_offset % self.bytes_per_line;
@@ -1117,7 +1146,7 @@ impl HexView {
             let evt = event::read()?;
             let transition = self
                 .mode
-                .transition(&evt, &mut self.buffers, self.bytes_per_line);
+                .transition(&evt, &mut self.buffr_collection, self.bytes_per_line);
             if let Some(transition) = transition {
                 self.transition(stdout, transition)?;
             } else {

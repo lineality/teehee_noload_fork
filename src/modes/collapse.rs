@@ -8,18 +8,18 @@ use crate::modes::{
     normal::Normal,
 };
 use crate::selection::SelRegion;
-use crate::Buffers;
+use crate::BuffrCollection;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Collapse();
 
 impl SearchAcceptor for Collapse {
-    fn apply_search(&self, pattern: Pattern, buffers: &mut Buffers, _: usize) -> ModeTransition {
-        let buffer = buffers.current_mut();
+    fn apply_search(&self, pattern: Pattern, buffr_collection: &mut BuffrCollection, _: usize) -> ModeTransition {
+        let current_buffer = buffr_collection.current_mut();
         if pattern.pieces.is_empty() {
             return ModeTransition::new_mode(Normal::new());
         }
-        let matched_ranges = pattern.map_selections_to_matches(buffer);
+        let matched_ranges = pattern.map_selections_to_matches(current_buffer);
         let matched_len: usize = matched_ranges
             .iter()
             .flatten()
@@ -34,7 +34,7 @@ impl SearchAcceptor for Collapse {
         let mut remaining_matched_ranges = &matched_ranges[..];
         ModeTransition::new_mode_and_dirty(
             Normal::new(),
-            buffer.map_selections(|base_region| {
+            current_buffer.map_selections(|base_region| {
                 let (this, next) = remaining_matched_ranges.split_first().unwrap();
                 remaining_matched_ranges = next;
 
@@ -51,7 +51,7 @@ impl Mode for Collapse {
         "COLLAPSE".into()
     }
 
-    fn transition(&self, _: &Event, _: &mut Buffers, _: usize) -> Option<ModeTransition> {
+    fn transition(&self, _: &Event, _: &mut BuffrCollection, _: usize) -> Option<ModeTransition> {
         None
     }
 

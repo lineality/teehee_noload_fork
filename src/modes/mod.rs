@@ -14,7 +14,7 @@ pub mod quitting {
         fn transition(
             &self,
             _: &crossterm::event::Event,
-            _: &mut crate::buffer::Buffers,
+            _: &mut crate::current_buffer::BuffrCollection,
             _: usize,
         ) -> Option<crate::modes::mode::ModeTransition> {
             unreachable!();
