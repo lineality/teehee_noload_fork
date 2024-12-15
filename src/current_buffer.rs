@@ -71,8 +71,8 @@ pub struct CurrentBuffer {
     pub selection: Selection,
     pub registers: HashMap<char, Vec<Vec<u8>>>,
     pub dirty: bool,
-
-    history: History,
+    pub history: History,
+    pub data_start_offset: usize,
 }
 
 // in current_buffers.rs
@@ -85,9 +85,14 @@ impl CurrentBuffer {
             dirty: false,
             path: path.map(Into::into),
             history: History::new(),
+            data_start_offset: 0,  // Initialize at 0
         }
     }
-
+    
+    pub fn data_start_offset(&self) -> usize {
+        self.data_start_offset
+    }
+    
     pub fn load_next_chunk(&mut self, chunk_size: usize) -> Result<bool, std::io::Error> {
         debug_log("Entering load_next_chunk");
         

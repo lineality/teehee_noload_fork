@@ -8,10 +8,6 @@ https://github.com/Gskartwii/teehee/releases
 ## Fork: This is an experimental fork of the original Gskartwii project.
 Any horribleness is totally on me. 
 
-
-
-
-
 ## Implemented keybinds (from original version Readme)
 * `hjkl` for movement (press shift to extend selection instead)
 ```
@@ -89,3 +85,23 @@ Counts:
 * Example: `50l`: Move 50 bytes to the right.
 * Example: `x500g`: Jump to offset 0x500
 * Example: `<a-s>x12xb`: Split selection into parts of 0x12 bytes.
+
+
+# Fork Goals:
+1. No-Load Memory:
+Based on an astute issue posted on the original Teehee
+```
+xeruf commented on May 21, 2021
+"...One of my main use-cases for hex editors is fixing issues with partitions.
+Partitions can be huge, ..."
+```
+The primary goal of No-Load Teehee Fork is to accomplish this,
+having the editor only load for view what is needed to view.
+
+Data Science is another area where it is very common to have multi-gigabyte 
+files that are too big to open with most software...but you still need to inspect
+the file.
+
+2. Being able to open to a "place" in the file, which may not have 'lines'
+
+3. Covering more than 16bit view will be another possible idea.

@@ -7,6 +7,8 @@ use std::io::{
     Seek,
     Write,
     Read,
+    Error,
+    ErrorKind,
 };
 use std::ops::Range;
 use std::time;
@@ -374,6 +376,20 @@ pub struct HexView {
 }
 
 impl HexView {
+    /// Checks if the buffer size exceeds the threshold for trimming
+    /// Uses dynamic chunk size based on terminal height
+    fn should_trim_buffer(&self) -> bool {
+        let (_, height) = terminal::size().unwrap_or((80, 23));
+        let chunk_size = (height as usize - 1) * 16;
+        let buffer_threshold = chunk_size * 3;  // 3x chunk size threshold
+        
+        let current_size = self.buffr_collection.current().data.len();
+        debug_log(&format!("Buffer check: size={}, threshold={}", 
+            current_size, buffer_threshold));
+        
+        current_size > buffer_threshold
+    }
+    
     fn is_near_bottom(&self) -> bool {
         debug_log("is_near_bottom()");
         
@@ -503,6 +519,7 @@ impl HexView {
         }
     }
     fn trim_buffer_top(&mut self, chunk_size: usize) {
+        debug_log("\n=== Trim Buffer Top ===");
         debug_log(&format!("trim_buffer_top, size={:?}", chunk_size));
         
         let current_buffer = self.buffr_collection.current_mut();
@@ -595,18 +612,65 @@ impl HexView {
         queue!(stdout, style::Print(format!("{} ", VERTICAL)))
     }
 
-    fn offset_to_row(&self, offset: usize) -> Option<u16> {
-        if offset < self.start_offset {
-            return None;
+    /// Converts a byte offset in the file to a screen row number (0-based).
+    /// 
+    /// # Details
+    /// - Takes a file byte offset (absolute position in file)
+    /// - Subtracts start_offset to get relative position in current view
+    /// - Divides by bytes_per_line (usually 16) to get row number
+    /// - Checks if resulting row would fit on screen
+    /// 
+    /// # Arguments
+    /// * `offset` - Absolute byte offset in file (e.g., 0 = first byte, 16 = start of second line)
+    /// 
+    /// # Returns
+    /// * `Ok(u16)` - Screen row number (0 = top of screen)
+    /// * `Err` - If calculated row would be outside visible screen area
+    /// 
+    /// # Example
+    /// ```
+    /// // If start_offset = 32 (viewing starts at 3rd line of file)
+    /// // bytes_per_line = 16
+    /// // screen height = 24
+    /// 
+    /// offset_to_row(48)  // -> Ok(1)  // (48-32)/16 = 1 (second line on screen)
+    /// offset_to_row(32)  // -> Ok(0)  // (32-32)/16 = 0 (first line on screen)
+    /// offset_to_row(416) // -> Err    // (416-32)/16 = 24 (beyond screen height)
+    /// ```
+    /// 
+    /// # Technical Notes
+    /// - Screen coordinates are 0-based
+    /// - Assumes fixed-width display (16 bytes per line)
+    /// - Must account for start_offset (current scroll position)
+    /// - Must fit within terminal height (self.size.1)
+    /// 
+    /// # Error Conditions
+    /// - Returns Err if calculated row >= screen height
+    /// - Can handle offsets smaller than start_offset (negative rows filtered)
+    /// 
+    fn offset_to_row(&self, offset: usize) -> Result<u16> {
+        let row = (offset - self.start_offset) / self.bytes_per_line;
+        if row >= self.size.1 as usize {
+            debug_log(&format!("offset_to_row: row {} exceeds screen height {}", 
+                row, self.size.1));
+            return Err(Error::new(ErrorKind::Other, "Row outside visible area"));
         }
-        let normalized_offset = offset - self.start_offset;
-        let bytes_per_line = self.bytes_per_line;
-        let max_bytes = bytes_per_line * self.size.1 as usize;
-        if normalized_offset > max_bytes {
-            return None;
-        }
-        Some((normalized_offset / bytes_per_line) as u16)
+        Ok(row as u16)
     }
+    
+    
+    // fn offset_to_row(&self, offset: usize) -> Option<u16> {
+    //     if offset < self.start_offset {
+    //         return None;
+    //     }
+    //     let normalized_offset = offset - self.start_offset;
+    //     let bytes_per_line = self.bytes_per_line;
+    //     let max_bytes = bytes_per_line * self.size.1 as usize;
+    //     if normalized_offset > max_bytes {
+    //         return None;
+    //     }
+    //     Some((normalized_offset / bytes_per_line) as u16)
+    // }
 
     // in view.rs
     // in impl HexView {}
@@ -620,7 +684,16 @@ impl HexView {
         byte_properties: &mut BytePropertiesFormatter,
     ) -> Result<()> {
         debug_log(&format!("draw_row, offset={:?}", offset));
-        let row_num = self.offset_to_row(offset).unwrap();
+        // let row_num = self.offset_to_row(offset).unwrap(); // panic here (don't ever use unwrap!!)
+        
+        // Replace unwrap with proper error handling
+        let row_num = match self.offset_to_row(offset) {
+            Ok(row) => row,
+            Err(e) => {
+                debug_log(&format!("Could not convert offset {} to row: {}", offset, e));
+                return Ok(());  // Skip drawing this row instead of panicking
+            }
+        };
 
         queue!(stdout, cursor::MoveTo(0, row_num))?;
         queue!(
@@ -1277,6 +1350,15 @@ impl HexView {
             match current_buffer.load_next_chunk(64) {
                 Ok(true) => {
                     debug_log(&format!("Loaded chunk. New size: {}", current_buffer.data.len()));
+                    debug_log(&format!("Should trim? {}", self.should_trim_buffer()));
+                    
+                    // Trim Buffer
+                    if self.should_trim_buffer() {
+                        let (_, height) = terminal::size().unwrap_or((80, 23));
+                        let chunk_size = (height as usize - 1) * 16;
+                        self.trim_buffer_top(chunk_size);
+                    }
+                    
                 },
                 Ok(false) => {
                     debug_log("No more data available");
