@@ -20,11 +20,10 @@ use crossterm::{
 };
 use xi_rope::{
     Interval,
-    Rope,
     Delta,
 };
-use xi_rope::multiset::Subset;
 use xi_rope::tree::TreeBuilder;
+use xi_rope::multiset::SubsetBuilder;
 use crate::byte_rope::Bytes;  // TODO Horrible name that will collide this must be changed
 
 
@@ -421,23 +420,31 @@ impl HexView {
         }
         Ok(())
     }
-    
     fn trim_buffer_bottom(&mut self, chunk_size: usize) {
         let current_buffer = self.buffr_collection.current_mut();
         if current_buffer.data.len() > chunk_size * 2 {
-            // Remove first chunk_size bytes
-            let subset = Subset::delete(Interval::new(0, chunk_size));
+            // Create a subset marking the first chunk_size bytes for deletion
+            let mut builder = SubsetBuilder::new();
+            builder.push_segment(chunk_size, 1);  // Mark first chunk_size bytes with count 1
+            let subset = builder.build();
+            
+            // Remove the marked bytes
             current_buffer.data = current_buffer.data.without_subset(subset);
             self.start_offset += chunk_size;
         }
     }
-
+    
     fn trim_buffer_top(&mut self, chunk_size: usize) {
         let current_buffer = self.buffr_collection.current_mut();
         if current_buffer.data.len() > chunk_size * 2 {
-            // Remove last chunk_size bytes
             let total_len = current_buffer.data.len();
-            let subset = Subset::delete_from(Interval::new(total_len - chunk_size, total_len));
+            
+            // Create a subset marking the last chunk_size bytes for deletion
+            let mut builder = SubsetBuilder::new();
+            builder.push_segment(total_len - chunk_size, 1);  // Mark last chunk_size bytes with count 1
+            let subset = builder.build();
+            
+            // Remove the marked bytes
             current_buffer.data = current_buffer.data.without_subset(subset);
         }
     }
