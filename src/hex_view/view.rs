@@ -24,7 +24,8 @@ use xi_rope::{
     Delta,
 };
 use xi_rope::multiset::Subset;
-
+use xi_rope::tree::TreeBuilder;
+use crate::byte_rope::Bytes;  // TODO Horrible name that will collide this must be changed
 
 
 
@@ -364,16 +365,26 @@ impl HexView {
             let bytes_read = file.read(&mut next_chunk)?;
             
             if bytes_read > 0 {
-                // Convert to Rope and append
-                let chunk_rope: Rope = next_chunk[..bytes_read].to_vec().into();
+                // Create new rope using TreeBuilder
+                let mut builder = TreeBuilder::new();
+                builder.push_leaf(Bytes(next_chunk[..bytes_read].to_vec()));
+                let chunk_node = builder.build();
+                
+                // Create delta
+                let delta = Delta::simple_edit(
+                    Interval::new(current_data_len, current_data_len), 
+                    chunk_node,
+                    current_buffer.data.len()
+                );
+                
+                // Apply delta
                 let mut current_data = current_buffer.data.clone();
-                current_data = current_data.apply_delta(&Delta::insert(current_data.len(), chunk_rope));
+                current_data = current_data.apply_delta(&delta);
                 self.buffr_collection.current_mut().data = current_data;
             }
         }
         Ok(())
     }
-
     fn add_chunk_to_top(&mut self, chunk_size: usize) -> std::result::Result<(), std::io::Error> {
         let current_buffer = self.buffr_collection.current();
         if let Some(path) = &current_buffer.path {
@@ -387,10 +398,21 @@ impl HexView {
             let bytes_read = file.read(&mut prev_chunk)?;
             
             if bytes_read > 0 {
-                // Convert to Rope and prepend
-                let chunk_rope: Rope = prev_chunk[..bytes_read].to_vec().into();
+                // Create new rope using TreeBuilder (same pattern as add_chunk_to_bottom)
+                let mut builder = TreeBuilder::new();
+                builder.push_leaf(Bytes(prev_chunk[..bytes_read].to_vec()));
+                let chunk_node = builder.build();
+                
+                // Create delta for insertion at the beginning
+                let delta = Delta::simple_edit(
+                    Interval::new(0, 0), 
+                    chunk_node,
+                    current_buffer.data.len()
+                );
+                
+                // Apply delta
                 let mut current_data = current_buffer.data.clone();
-                current_data = current_data.apply_delta(&Delta::insert(0, chunk_rope));
+                current_data = current_data.apply_delta(&delta);
                 self.buffr_collection.current_mut().data = current_data;
                 
                 // Adjust start_offset
@@ -399,12 +421,12 @@ impl HexView {
         }
         Ok(())
     }
-
+    
     fn trim_buffer_bottom(&mut self, chunk_size: usize) {
         let current_buffer = self.buffr_collection.current_mut();
         if current_buffer.data.len() > chunk_size * 2 {
             // Remove first chunk_size bytes
-            let subset = Subset::new(vec![(0, chunk_size)]);
+            let subset = Subset::delete(Interval::new(0, chunk_size));
             current_buffer.data = current_buffer.data.without_subset(subset);
             self.start_offset += chunk_size;
         }
@@ -415,11 +437,10 @@ impl HexView {
         if current_buffer.data.len() > chunk_size * 2 {
             // Remove last chunk_size bytes
             let total_len = current_buffer.data.len();
-            let subset = Subset::new(vec![(total_len - chunk_size, total_len)]);
+            let subset = Subset::delete_from(Interval::new(total_len - chunk_size, total_len));
             current_buffer.data = current_buffer.data.without_subset(subset);
         }
     }
-
     fn manage_buffer(&mut self) -> std::result::Result<(), std::io::Error> {
         let chunk_size = 368;  // Your previous chunk size
         
