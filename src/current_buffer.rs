@@ -8,6 +8,14 @@ use super::history::History;
 use crate::modes::mode::DirtyBytes;
 use crate::selection::{SelRegion, Selection};
 
+use std::fs::File;
+use std::io::SeekFrom;
+use std::io::Seek;
+use std::io::Read;
+
+
+
+
 #[derive(Debug, PartialEq, Clone, Copy, Eq, Hash)]
 pub enum OverflowSelectionStyle {
     Cursor,
@@ -15,8 +23,9 @@ pub enum OverflowSelectionStyle {
     CursorTail,
 }
 
+
 #[derive(Default)]
-pub struct Buffer {
+pub struct CurrentBuffer {
     pub path: Option<PathBuf>,
     pub data: Rope,
     pub selection: Selection,
@@ -26,15 +35,53 @@ pub struct Buffer {
     history: History,
 }
 
-impl Buffer {
-    pub fn from_data_and_path(data: Vec<u8>, path: Option<impl Into<PathBuf>>) -> Buffer {
-        Buffer {
+impl CurrentBuffer {
+    pub fn from_data_and_path(data: Vec<u8>, path: Option<impl Into<PathBuf>>) -> CurrentBuffer {
+        CurrentBuffer {
             data: data.into(),
             selection: Selection::new(),
             registers: HashMap::new(),
             dirty: false,
             path: path.map(Into::into),
             history: History::new(),
+        }
+    }
+
+    pub fn load_next_chunk(&mut self, chunk_size: usize) -> Result<bool, std::io::Error> {
+        if let Some(path) = &self.path {
+            let mut file = File::open(path)?;
+            
+            // Seek to the end of current data
+            file.seek(SeekFrom::Start(self.data.len() as u64))?;
+            
+            let mut next_chunk = vec![0; chunk_size];
+            let bytes_read = file.read(&mut next_chunk)?;
+            
+            if bytes_read > 0 {
+                // Convert Vec<u8> to Rope
+                let new_data = Rope::from(next_chunk[..bytes_read].to_vec());
+
+                // Remove top chunk if we're getting too large
+                let max_current_buffer_size = chunk_size * 3;  // 2-3x chunk size
+                if self.data.len() > max_current_buffer_size {
+                    // Use slice_to_cow to get a view of the data from chunk_size to end
+                    let remaining_data = self.data.slice_to_cow(chunk_size..);
+                    
+                    // Convert back to Rope
+                    self.data = Rope::from(remaining_data.to_vec());
+                }
+
+                // Create a new Rope that combines existing data and new chunk
+                let mut combined_bytes: Vec<u8> = Vec::from(&self.data);
+                combined_bytes.extend_from_slice(&Vec::<u8>::from(&new_data));
+                
+                self.data = Rope::from(combined_bytes);
+                Ok(true)
+            } else {
+                Ok(false)  // No more data to load
+            }
+        } else {
+            Ok(false)  // No path, can't load
         }
     }
 
@@ -74,7 +121,7 @@ impl Buffer {
         DirtyBytes::ChangeInPlace(disjoint_invalidated_ranges)
     }
 
-    fn apply_delta_to_buffer(&mut self, delta: RopeDelta, is_final: bool) {
+    fn apply_delta_to_current_buffer(&mut self, delta: RopeDelta, is_final: bool) {
         let next_data = self.data.apply_delta(&delta);
         if is_final {
             self.history
@@ -89,7 +136,7 @@ impl Buffer {
 
     pub fn apply_delta(&mut self, delta: RopeDelta) -> DirtyBytes {
         let max_len = self.data.len();
-        self.apply_delta_to_buffer(delta.clone(), true);
+        self.apply_delta_to_current_buffer(delta.clone(), true);
         self.selection.apply_delta(&delta, max_len);
 
         DirtyBytes::ChangeLength
@@ -102,7 +149,7 @@ impl Buffer {
         tail_offset: isize,
     ) -> DirtyBytes {
         let max_len = self.data.len();
-        self.apply_delta_to_buffer(delta.clone(), true);
+        self.apply_delta_to_current_buffer(delta.clone(), true);
         self.selection
             .apply_delta_offset_carets(&delta, caret_offset, tail_offset, max_len);
 
@@ -111,7 +158,7 @@ impl Buffer {
 
     pub fn apply_incomplete_delta(&mut self, delta: RopeDelta) -> DirtyBytes {
         let max_len = self.data.len();
-        self.apply_delta_to_buffer(delta.clone(), false);
+        self.apply_delta_to_current_buffer(delta.clone(), false);
         self.selection.apply_delta(&delta, max_len);
 
         DirtyBytes::ChangeLength
@@ -124,7 +171,7 @@ impl Buffer {
         tail_offset: isize,
     ) -> DirtyBytes {
         let max_len = self.data.len();
-        self.apply_delta_to_buffer(delta.clone(), false);
+        self.apply_delta_to_current_buffer(delta.clone(), false);
         self.selection
             .apply_delta_offset_carets(&delta, caret_offset, tail_offset, max_len);
 
@@ -225,44 +272,48 @@ impl Buffer {
     }
 }
 
-pub struct Buffers {
-    list: Vec<Buffer>,
+pub struct BuffrCollection {
+    list: Vec<CurrentBuffer>,
     cur_buf_index: usize,
 }
 
-impl Default for Buffers {
+impl Default for BuffrCollection {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Buffers {
-    pub fn new() -> Buffers {
-        Buffers::with_buffer(Buffer::default())
+impl BuffrCollection {
+    pub fn load_next_chunk(&mut self, chunk_size: usize) -> Result<bool, std::io::Error> {
+        self.current_mut().load_next_chunk(chunk_size)
+    }
+    
+    pub fn new() -> BuffrCollection {
+        BuffrCollection::with_current_buffer(CurrentBuffer::default())
     }
 
-    pub fn with_buffer(buf: Buffer) -> Buffers {
-        Buffers {
+    pub fn with_current_buffer(buf: CurrentBuffer) -> BuffrCollection {
+        BuffrCollection {
             cur_buf_index: 0,
             list: vec![buf],
         }
     }
 
-    pub fn current(&self) -> &Buffer {
+    pub fn current(&self) -> &CurrentBuffer {
         &self.list[self.cur_buf_index]
     }
-    pub fn current_mut(&mut self) -> &mut Buffer {
+    pub fn current_mut(&mut self) -> &mut CurrentBuffer {
         &mut self.list[self.cur_buf_index]
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &Buffer> {
+    pub fn iter(&self) -> impl Iterator<Item = &CurrentBuffer> {
         self.list.iter()
     }
-    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Buffer> {
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut CurrentBuffer> {
         self.list.iter_mut()
     }
 
-    pub fn switch_buffer(&mut self, filename: impl AsRef<Path>) -> Result<(), std::io::Error> {
+    pub fn switch_current_buffer(&mut self, filename: impl AsRef<Path>) -> Result<(), std::io::Error> {
         let canon = filename.as_ref().canonicalize()?;
         for (i, buf) in self.list.iter().enumerate() {
             if let Some(path) = &buf.path {
@@ -273,7 +324,7 @@ impl Buffers {
             }
         }
 
-        self.list.push(Buffer::from_data_and_path(
+        self.list.push(CurrentBuffer::from_data_and_path(
             std::fs::read(&filename)?,
             Some(filename.as_ref().to_owned()),
         ));
@@ -285,7 +336,7 @@ impl Buffers {
         self.list.remove(self.cur_buf_index);
         self.cur_buf_index = self.cur_buf_index.saturating_sub(1);
         if self.list.is_empty() {
-            self.list.push(Buffer::default());
+            self.list.push(CurrentBuffer::default());
         }
     }
 }

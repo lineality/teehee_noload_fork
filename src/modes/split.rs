@@ -12,7 +12,7 @@ use crate::modes::{
     search::{Pattern, PatternPiece, Search, SearchAcceptor},
 };
 use crate::selection::SelRegion;
-use crate::{cmd_count, Buffers};
+use crate::{cmd_count, BuffrCollection};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Split {
@@ -46,18 +46,18 @@ lazy_static! {
 }
 
 impl SearchAcceptor for Split {
-    fn apply_search(&self, pattern: Pattern, buffers: &mut Buffers, _: usize) -> ModeTransition {
-        let buffer = buffers.current_mut();
+    fn apply_search(&self, pattern: Pattern, buffr_collection: &mut BuffrCollection, _: usize) -> ModeTransition {
+        let current_buffer = buffr_collection.current_mut();
         if pattern.pieces.is_empty() {
             return ModeTransition::new_mode(Normal::new());
         }
-        let matched_ranges = pattern.map_selections_to_matches(buffer);
+        let matched_ranges = pattern.map_selections_to_matches(current_buffer);
         let matched_len: usize = matched_ranges
             .iter()
             .flatten()
             .map(|r| r.end - r.start)
             .sum();
-        if matched_len == buffer.selection.len_bytes() {
+        if matched_len == current_buffer.selection.len_bytes() {
             // Everything selected was matched: refuse to split because it would yield
             // an empty selection (invalid)
             return ModeTransition::new_mode(Normal::new());
@@ -67,7 +67,7 @@ impl SearchAcceptor for Split {
 
         ModeTransition::new_mode_and_dirty(
             Normal::new(),
-            buffer.map_selections(|mut base_region| {
+            current_buffer.map_selections(|mut base_region| {
                 let mut out = vec![];
                 let mut remaining = true;
 
@@ -104,10 +104,10 @@ impl Mode for Split {
     fn transition(
         &self,
         evt: &Event,
-        buffers: &mut Buffers,
+        buffr_collection: &mut BuffrCollection,
         bytes_per_line: usize,
     ) -> Option<ModeTransition> {
-        let buffer = buffers.current_mut();
+        let current_buffer = buffr_collection.current_mut();
         if let cmd_count::Transition::Update(new_state) = self.count_state.transition(evt) {
             Some(ModeTransition::new_mode(Split {
                 count_state: new_state,
@@ -117,7 +117,7 @@ impl Mode for Split {
             Some(match action {
                 Action::Width(width) => ModeTransition::new_mode_and_dirty(
                     Normal::new(),
-                    buffer.map_selections(|region| {
+                    current_buffer.map_selections(|region| {
                         (region.min()..=region.max())
                             .step_by(width * count)
                             .map(|pos| {
@@ -133,7 +133,7 @@ impl Mode for Split {
                             .take(count)
                             .collect(),
                     },
-                    buffers,
+                    buffr_collection,
                     bytes_per_line,
                 ),
                 Action::Search { hex } => ModeTransition::new_mode(Search::new(*self, hex)),

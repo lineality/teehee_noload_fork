@@ -2,7 +2,7 @@ use crossterm::event::Event;
 use std::borrow::Cow;
 use xi_rope::Interval;
 
-use crate::Buffers;
+use crate::BuffrCollection;
 
 // A mode should OWN all data related to it. Hence we bound it by 'static.
 pub trait Mode: 'static {
@@ -11,7 +11,7 @@ pub trait Mode: 'static {
     fn transition(
         &self,
         event: &Event,
-        buffers: &mut Buffers,
+        buffr_collection: &mut BuffrCollection,
         bytes_per_line: usize,
     ) -> Option<ModeTransition>;
 

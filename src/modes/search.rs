@@ -12,7 +12,7 @@ use crate::modes::{
     mode::{Mode, ModeTransition},
     normal::Normal,
 };
-use crate::{Buffer, Buffers};
+use crate::{CurrentBuffer, BuffrCollection};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum PatternPiece {
@@ -61,9 +61,9 @@ impl Pattern {
             .collect::<Option<Vec<_>>>()
     }
 
-    pub fn map_selections_to_matches(&self, buffer: &Buffer) -> Vec<Vec<Range<usize>>> {
+    pub fn map_selections_to_matches(&self, current_buffer: &CurrentBuffer) -> Vec<Vec<Range<usize>>> {
         if let Some(basic_subslice) = self.as_basic_slice() {
-            buffer
+            current_buffer
                 .selection
                 .iter()
                 .map(|x| {
@@ -71,7 +71,7 @@ impl Pattern {
                     let mut matched_ranges = vec![];
                     let byte_substring = ByteSubstring::new(&basic_subslice);
 
-                    let data = buffer.data.slice_to_cow(base..=x.max());
+                    let data = current_buffer.data.slice_to_cow(base..=x.max());
                     let mut slice_base = 0;
 
                     while let Some(start) = byte_substring.find(&data[slice_base..]) {
@@ -97,12 +97,12 @@ impl Pattern {
             builder.unicode(false);
             let matcher = builder.build().expect("Failed to create pattern");
 
-            buffer
+            current_buffer
                 .selection
                 .iter()
                 .map(|x| {
                     matcher
-                        .find_iter(&buffer.data.slice_to_cow(x.min()..=x.max()))
+                        .find_iter(&current_buffer.data.slice_to_cow(x.min()..=x.max()))
                         .map(|r| (x.min() + r.start())..(x.min() + r.end()))
                         .collect::<Vec<_>>()
                 })
@@ -115,7 +115,7 @@ pub trait SearchAcceptor: Mode {
     fn apply_search(
         &self,
         pattern: Pattern,
-        buffers: &mut Buffers,
+        buffr_collection: &mut BuffrCollection,
         bytes_per_line: usize,
     ) -> ModeTransition;
 }
@@ -181,7 +181,7 @@ impl Mode for Search {
     fn transition(
         &self,
         evt: &Event,
-        buffers: &mut Buffers,
+        buffr_collection: &mut BuffrCollection,
         bytes_per_line: usize,
     ) -> Option<ModeTransition> {
         if let Some(action) = DEFAULT_MAPS.event_to_action(evt) {
@@ -220,7 +220,7 @@ impl Mode for Search {
                 Action::Finish => {
                     return Some(self.next.borrow().as_ref().unwrap().apply_search(
                         pattern,
-                        buffers,
+                        buffr_collection,
                         bytes_per_line,
                     ))
                 }
