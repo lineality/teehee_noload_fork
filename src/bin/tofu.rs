@@ -2,8 +2,8 @@
 use std::fs::File;
 use std::io::Read;
 use std::io::{stdout, BufWriter};
-use teehee::hex_view::view::HexView;
-use teehee::{CurrentBuffer, BuffrCollection};
+use tofu::hex_view::view::HexView;
+use tofu::{CurrentBuffer, BuffrCollection};
 use std::fs::OpenOptions;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;

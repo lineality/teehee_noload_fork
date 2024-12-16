@@ -1,5 +1,5 @@
 [package]
-name = "tehe"
+name = "tofu"
 description = "TeeHee Lite: Fork that does not load whole file, Based on https://github.com/Gskartwii/teehee Gskartwii <ahannula4@gmail.com> Hex editor with inspiration from Vim, Kakoune and Hiew"
 version = "0.2.8"
 authors = ["Geoffrey Gordon Ashbrook <lineality@gmail.com>"]
