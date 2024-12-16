@@ -10,5 +10,6 @@ mod cmd_count;
 mod modes;
 mod operations;
 mod selection;
+mod navigation;
 
 pub use current_buffer::{CurrentBuffer, BuffrCollection};

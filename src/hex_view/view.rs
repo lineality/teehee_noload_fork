@@ -2,6 +2,7 @@ use std::cell::Cell;
 use std::cmp;
 use std::collections::BTreeSet;
 use std::fmt;
+use std::io;
 use std::io::{
     SeekFrom,
     Seek,
@@ -44,6 +45,7 @@ use crate::modes::mode::{DirtyBytes, Mode, ModeTransition};
 use crate::selection::Direction;
 // use std::path::Path;
 use std::env;
+use std::path::PathBuf;
 
 use crate::byte_rope::Rope as CustomByteRope;
 use crate::navigation::{NavigationSystem, NavigationCommand, NavCommandType, FilePosition};
@@ -383,9 +385,38 @@ pub struct HexView {
 
     mode: Box<dyn Mode>,
     info: Option<String>,
+    pub navigation: NavigationSystem,
+    // pub file_path: PathBuf,
+    // pub chunk_size: usize,
+    // pub needs_redraw: bool,
 }
 
 impl HexView {
+    pub fn new(path: Option<PathBuf>) -> io::Result<Self> {
+        let file_path = path.unwrap_or_else(|| PathBuf::from(""));
+        let chunk_size = 384; // Default chunk size
+        let navigation = NavigationSystem::new(&file_path)?;
+
+        Ok(HexView {
+            // Existing fields
+            buffr_collection: Buffers::new(),
+            size: Size::default(),
+            bytes_per_line: 16,
+            start_offset: 0,
+            last_visible_rows: 0,
+            colorizer: Colorizer::new(),
+            input_mode: InputMode::Normal,
+            status: String::new(),
+            command: String::new(),
+            selection: Selection::new(),
+            
+            // New fields
+            navigation,
+            file_path,
+            chunk_size,
+            needs_redraw: true,
+        })
+    }
     
     /// # Handle Navigation Command
     /// 
@@ -405,7 +436,7 @@ impl HexView {
     /// - Out of bounds movements
     /// - File access errors
     /// 
-    pub fn handle_navigation_command(&mut self, input: &str) -> Result<(), std::io::Error> {
+    pub fn handle_navigation_command(&mut self, input: &str) -> io::Result<()> {
         debug_log(&format!("Processing navigation command: {}", input));
 
         // Parse the navigation command
@@ -434,7 +465,7 @@ impl HexView {
         };
 
         // Only reload if we actually moved
-        if new_offset != old_offset {
+        if new_offset as usize != old_offset {
             debug_log(&format!(
                 "Moving from offset {} to {}", 
                 old_offset, 
@@ -454,7 +485,7 @@ impl HexView {
     }
 
     /// Update the status line with current position information
-    fn update_status_line(&mut self) -> Result<(), std::io::Error> {
+    fn update_status_line(&mut self) -> io::Result<()> {
         let position_info = self.navigation.get_position_info();
         // Update your status line display with position_info
         debug_log(&format!("Status updated: {}", position_info));
@@ -462,7 +493,7 @@ impl HexView {
     }
 
     /// Load a chunk of data at the specified offset
-    fn load_chunk_at_offset(&mut self, offset: u64) -> Result<(), std::io::Error> {
+    fn load_chunk_at_offset(&mut self, offset: u64) -> io::Result<()> {
         debug_log(&format!("Loading chunk at offset: {}", offset));
 
         // Get the current buffer
@@ -481,7 +512,7 @@ impl HexView {
 
         // Create new rope from chunk
         current_buffer.data = CustomByteRope::from(chunk);
-        self.start_offset = offset;
+        self.start_offset = offset as usize;
 
         // Trigger redraw if needed
         self.needs_redraw = true;
@@ -490,7 +521,7 @@ impl HexView {
     }
 
     /// Handle keyboard shortcuts for navigation
-    pub fn handle_navigation_keypress(&mut self, key: KeyEvent) -> Result<(), std::io::Error> {
+    pub fn handle_navigation_keypress(&mut self, key: KeyEvent) -> io::Result<()> {
         match key.code {
             KeyCode::Home => {
                 self.handle_navigation_command(":start")?;
@@ -512,7 +543,7 @@ impl HexView {
 
     /// Get current position as percentage
     pub fn get_current_percentage(&self) -> f64 {
-        self.navigation.current_percentage
+        self.navigation.get_current_percentage()
     }
 
     /// Check if we're at the start of the file
@@ -523,7 +554,7 @@ impl HexView {
     /// Check if we're at the end of the file
     pub fn is_at_end(&self) -> bool {
         let (_, window_end) = self.navigation.get_current_window();
-        window_end >= self.navigation.file_size
+        window_end >= self.navigation.get_file_size()
     }
     
     
@@ -862,6 +893,10 @@ impl HexView {
 
             mode: Box::new(modes::normal::Normal::new()),
             info: None,
+            navigation: NavigationSystem,
+            file_path: PathBuf,
+            chunk_size: usize,
+            needs_redraw: bool,
         }
     }
 

@@ -1,3 +1,52 @@
+use std::path::Path;
+
+
+use std::fs::OpenOptions;
+use std::io::Write;    
+use std::env;
+use std::time::{
+    SystemTime, 
+    UNIX_EPOCH
+};
+
+// Oh my Uma, it's a Debug-Log... 
+// Why is this returning a result???
+// todo THis never does ANYTHING
+const DEBUG_LOG: bool = false;
+
+fn debug_log(message: &str) {
+    /*
+    use std::fs::OpenOptions;
+    use std::io::Write;    
+    use std::env;
+    use std::time::{
+        SystemTime, 
+        UNIX_EPOCH
+    };
+    */
+    if DEBUG_LOG {
+        if let Ok(cwd) = env::current_dir() {
+            let log_path = cwd.join("teehee_debug.log");
+
+            // Check if path exists and is writable
+            if log_path.exists() {
+                // If the path exists, attempt to open the file for writing
+                if let Ok(mut file) = OpenOptions::new()
+                    .write(true)
+                    .append(true)
+                    .open(&log_path) {
+
+                    // If the file is opened successfully, get the current time and write the message to the file
+                    if let Ok(timestamp) = SystemTime::now().duration_since(UNIX_EPOCH) {
+                        let _ = writeln!(file, "[{}] {}", timestamp.as_secs(), message);
+                    }
+                }
+            }
+        }
+    }
+}
+
+
 /// # Navigation System for Binary File Viewing
 /// 
 /// Provides percentage-based navigation through large binary files.
@@ -24,6 +73,7 @@ pub struct NavigationSystem {
 }
 
 /// Standard position markers for quick navigation
+#[derive(Debug)]
 pub enum FilePosition {
     START,           // 0%
     QUARTER,         // 25%
@@ -43,6 +93,14 @@ impl NavigationSystem {
         })
     }
 
+    pub fn get_current_percentage(&self) -> f64 {
+        self.current_percentage
+    }
+
+    pub fn get_file_size(&self) -> u64 {
+        self.file_size
+    }
+    
     /// Jump to an absolute percentage position in the file
     /// 
     /// # Arguments
