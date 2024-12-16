@@ -3,8 +3,10 @@
 
 # Original Teehee here:
 https://github.com/Gskartwii/teehee/releases
+
 #### For more information see the real Teehee (it's awsome)
 Appologies if I did not correctly put attributes to the author in the .toml file;
+am I supposed to not change the name or change the name or include the original author or not?
 Anything broken in this experimental fork is my fault and not the original author.
 
 ## Fork: This is an experimental fork of the original Gskartwii project.

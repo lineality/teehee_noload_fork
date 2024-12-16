@@ -46,6 +46,8 @@ use crate::selection::Direction;
 use std::env;
 
 use crate::byte_rope::Rope as CustomByteRope;
+use crate::navigation::{NavigationSystem, NavigationCommand, NavCommandType, FilePosition};
+
 
 const VERTICAL: &str = "│";
 const LEFTARROW: &str = "";
@@ -384,6 +386,147 @@ pub struct HexView {
 }
 
 impl HexView {
+    
+    /// # Handle Navigation Command
+    /// 
+    /// Processes user navigation commands and updates the view accordingly.
+    /// Integrates with the NavigationSystem to manage file positioning.
+    /// 
+    /// ## Command Examples
+    /// - `:50%`    - Jump to middle of file
+    /// - `:+10%`   - Move forward 10%
+    /// - `:-5%`    - Move backward 5%
+    /// - `:start`  - Jump to beginning
+    /// - `:end`    - Jump to end
+    /// - `:q25`    - Jump to first quarter
+    /// 
+    /// ## Error Handling
+    /// - Invalid commands
+    /// - Out of bounds movements
+    /// - File access errors
+    /// 
+    pub fn handle_navigation_command(&mut self, input: &str) -> Result<(), std::io::Error> {
+        debug_log(&format!("Processing navigation command: {}", input));
+
+        // Parse the navigation command
+        let command = NavigationCommand::parse(input)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+
+        // Get current state before navigation
+        let old_offset = self.start_offset;
+        
+        // Handle different types of navigation commands
+        let new_offset = match command.command_type {
+            NavCommandType::AbsoluteJump => {
+                debug_log(&format!("Absolute jump to {}%", command.value));
+                self.navigation.jump_to_percentage(command.value)?
+            },
+            
+            NavCommandType::RelativeMove => {
+                debug_log(&format!("Relative move by {}%", command.value));
+                self.navigation.move_relative(command.value)?
+            },
+            
+            NavCommandType::QuickPosition(position) => {
+                debug_log(&format!("Quick jump to {:?}", position));
+                self.navigation.jump_to_position(position)?
+            },
+        };
+
+        // Only reload if we actually moved
+        if new_offset != old_offset {
+            debug_log(&format!(
+                "Moving from offset {} to {}", 
+                old_offset, 
+                new_offset
+            ));
+
+            // Load the new chunk of data
+            self.load_chunk_at_offset(new_offset)?;
+            
+            // Update status display
+            self.update_status_line()?;
+        } else {
+            debug_log("Position unchanged");
+        }
+
+        Ok(())
+    }
+
+    /// Update the status line with current position information
+    fn update_status_line(&mut self) -> Result<(), std::io::Error> {
+        let position_info = self.navigation.get_position_info();
+        // Update your status line display with position_info
+        debug_log(&format!("Status updated: {}", position_info));
+        Ok(())
+    }
+
+    /// Load a chunk of data at the specified offset
+    fn load_chunk_at_offset(&mut self, offset: u64) -> Result<(), std::io::Error> {
+        debug_log(&format!("Loading chunk at offset: {}", offset));
+
+        // Get the current buffer
+        let current_buffer = self.buffr_collection.current_mut();
+        
+        // Open the file and seek to position
+        let mut file = std::fs::File::open(&self.file_path)?;
+        file.seek(SeekFrom::Start(offset))?;
+
+        // Read the chunk
+        let mut chunk = Vec::with_capacity(self.chunk_size);
+        let bytes_read = file.take(self.chunk_size as u64)
+            .read_to_end(&mut chunk)?;
+
+        debug_log(&format!("Read {} bytes", bytes_read));
+
+        // Create new rope from chunk
+        current_buffer.data = CustomByteRope::from(chunk);
+        self.start_offset = offset;
+
+        // Trigger redraw if needed
+        self.needs_redraw = true;
+
+        Ok(())
+    }
+
+    /// Handle keyboard shortcuts for navigation
+    pub fn handle_navigation_keypress(&mut self, key: KeyEvent) -> Result<(), std::io::Error> {
+        match key.code {
+            KeyCode::Home => {
+                self.handle_navigation_command(":start")?;
+            },
+            KeyCode::End => {
+                self.handle_navigation_command(":end")?;
+            },
+            KeyCode::PageUp => {
+                self.handle_navigation_command(":-10%")?;
+            },
+            KeyCode::PageDown => {
+                self.handle_navigation_command(":+10%")?;
+            },
+            // Add more keyboard shortcuts as needed
+            _ => {},
+        }
+        Ok(())
+    }
+
+    /// Get current position as percentage
+    pub fn get_current_percentage(&self) -> f64 {
+        self.navigation.current_percentage
+    }
+
+    /// Check if we're at the start of the file
+    pub fn is_at_start(&self) -> bool {
+        self.start_offset == 0
+    }
+
+    /// Check if we're at the end of the file
+    pub fn is_at_end(&self) -> bool {
+        let (_, window_end) = self.navigation.get_current_window();
+        window_end >= self.navigation.file_size
+    }
+    
+    
     /// Checks if the buffer size exceeds the threshold for trimming
     /// Uses dynamic chunk size based on terminal height
     fn should_trim_buffer(&self) -> bool {
