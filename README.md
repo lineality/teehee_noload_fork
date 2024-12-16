@@ -1,7 +1,13 @@
 ### Tofu - memory efficient modal terminal hex editor
+## Note: due to repo/fork confusion, future Tofu code will be moved to new repo
 
-Tofu (Teehee fork) loads from a file only up to 3x the size of what the terminal can show at a time, and uses a chunk-window system to move the window as the user scrolls.
+'Tofu' text (hex) editor (a Teehee fork) loads from a file only up to 3x the size of what the terminal can show at a time, and uses a chunk-window system to move the window as the user scrolls.
 
+
+### linux: for small build, use (for me executible is 1.8mb)
+```bash
+cargo build --profile release-small 
+```
 
 # Original Teehee here:
 https://github.com/Gskartwii/teehee/releases
@@ -91,7 +97,7 @@ Counts:
 
 
 # Fork Goals:
-1. No-Load Memory:
+1. No-Load Memory: [maybe Done]
 Based on an astute issue posted on the original Teehee
 ```
 xeruf commented on May 21, 2021
@@ -105,5 +111,5 @@ Data Science is another area where it is very common to have multi-gigabyte
 files that are too big to open with most software...but you still need to inspect
 the file.
 
-2. (maybe future) Being able to open to a "place" in the file, which may not have 'lines' by %
+2. (will try future) Being able to open to a "place" in the file, which may not have 'lines' by %
 

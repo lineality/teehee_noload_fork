@@ -19,3 +19,13 @@ lazy_static = "1.4.0"
 jetscii = "0.5"
 regex = "1"
 maplit = "1.0.2"
+
+[profile.release-small]
+inherits = "release"
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
+incremental = false
+opt-level = 3
+
